@@ -14,13 +14,16 @@ import threading
 import time
 import numpy as np
 from queue import Queue
-from reportlab.lib.pagesizes import A8
+from reportlab.lib.pagesizes import A4, A8
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 import io
 from reportlab.lib import colors
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+import pandas as pd
 
 # Set appearance mode and default color theme
 ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
@@ -94,8 +97,6 @@ class LibraryApp:
                 id INTEGER PRIMARY KEY,
                 code TEXT,
                 title TEXT,
-                author TEXT,
-                category TEXT,
                 status TEXT
             )
         ''')
@@ -110,6 +111,17 @@ class LibraryApp:
                 returned INTEGER,
                 FOREIGN KEY (member_id) REFERENCES members (id),
                 FOREIGN KEY (book_id) REFERENCES books (id)
+            )
+        ''')
+        
+        # Create access log table
+        self.cursor.execute('''
+            CREATE TABLE IF NOT EXISTS access_log (
+                id INTEGER PRIMARY KEY,
+                member_id INTEGER,
+                access_time DATETIME,
+                action TEXT,
+                FOREIGN KEY (member_id) REFERENCES members (id)
             )
         ''')
         
@@ -223,9 +235,10 @@ class LibraryApp:
             ("ยืมหนังสือ", self.show_borrow, 0, 2),
             ("คืนหนังสือ", self.show_return, 1, 0),
             ("ประวัติการยืม-คืน", self.show_history, 1, 1),
-            ("ตั้งค่า", self.show_settings, 1, 2),
-            ("เกี่ยวกับ", self.show_about, 2, 0),
-            ("ออกจากระบบ", self.show_login, 2, 1)
+            ("บันทึกเข้าออก", self.show_access_scanner, 1, 2),
+            ("ประวัติเข้าออก", self.show_access_history, 2, 0),
+            ("ตั้งค่า", self.show_settings, 2, 1),
+            ("เกี่ยวกับ", self.show_about, 2, 2)
         ]
         
         # Create and place buttons
@@ -551,21 +564,23 @@ class LibraryApp:
         title_entry = ctk.CTkEntry(form_frame, placeholder_text="ชื่อเรื่อง")
         title_entry.pack(pady=5, padx=20, fill="x")
         
-        author_entry = ctk.CTkEntry(form_frame, placeholder_text="ผู้แต่ง")
-        author_entry.pack(pady=5, padx=20, fill="x")
-        
-        category_entry = ctk.CTkEntry(form_frame, placeholder_text="หมวดหมู่")
-        category_entry.pack(pady=5, padx=20, fill="x")
-        
         # Add book button
         add_button = ctk.CTkButton(form_frame, text="เพิ่มหนังสือ", 
                                  command=lambda: self.add_book(
                                      code_entry.get(),
-                                     title_entry.get(),
-                                     author_entry.get(),
-                                     category_entry.get()
+                                     title_entry.get()
                                  ))
         add_button.pack(pady=10)
+        
+        # Import Excel button
+        import_button = ctk.CTkButton(form_frame, text="นำเข้าจาก Excel", 
+                                    command=self.import_books_from_excel)
+        import_button.pack(pady=10)
+        
+        # Export template button
+        template_button = ctk.CTkButton(form_frame, text="ดาวน์โหลดแม่แบบ Excel", 
+                                      command=self.export_excel_template)
+        template_button.pack(pady=10)
         
         # Back button
         back_button = ctk.CTkButton(book_frame, text="กลับ", 
@@ -575,16 +590,16 @@ class LibraryApp:
         # Display existing books
         self.display_books(book_frame)
         
-    def add_book(self, code, title, author, category):
-        if not all([code, title, author, category]):
+    def add_book(self, code, title):
+        if not all([code, title]):
             self.show_error("กรุณากรอกข้อมูลให้ครบ")
             return
             
         try:
             self.cursor.execute('''
-                INSERT INTO books (code, title, author, category, status)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (code, title, author, category, "ว่าง"))
+                INSERT INTO books (code, title, status)
+                VALUES (?, ?, ?)
+            ''', (code, title, "ว่าง"))
             self.conn.commit()
             self.show_success("เพิ่มหนังสือสำเร็จ")
             self.show_book_management()  # Refresh the view
@@ -606,7 +621,7 @@ class LibraryApp:
             book_frame.pack(pady=5, padx=10, fill="x")
             
             # Book info
-            info_text = f"รหัส: {book[1]} | ชื่อ: {book[2]} | ผู้แต่ง: {book[3]} | หมวดหมู่: {book[4]} | สถานะ: {book[5]}"
+            info_text = f"รหัส: {book[1]} | ชื่อ: {book[2]} | สถานะ: {book[3]}"
             info_label = ctk.CTkLabel(book_frame, text=info_text)
             info_label.pack(side="left", padx=10)
             
@@ -622,6 +637,15 @@ class LibraryApp:
             if self.cursor.fetchone():
                 self.show_error("ไม่สามารถลบหนังสือที่กำลังถูกยืมอยู่ได้")
                 return
+
+            # Show confirmation dialog
+            confirm = self.show_confirm_dialog(
+                "ยืนยันการลบ",
+                f"คุณต้องการลบหนังสือ '{book[2]}' ใช่หรือไม่?"
+            )
+            
+            if not confirm:
+                return
                 
             # Delete from database
             self.cursor.execute("DELETE FROM books WHERE id = ?", (book[0],))
@@ -631,7 +655,63 @@ class LibraryApp:
             self.show_book_management()  # Refresh the view
         except Exception as e:
             self.show_error(f"เกิดข้อผิดพลาด: {str(e)}")
+
+    def show_confirm_dialog(self, title, message):
+        dialog = ctk.CTkToplevel(self.app)
+        dialog.title(title)
+        dialog.geometry("400x200")
+        dialog.grab_set()  # Make dialog modal
+        
+        # Center dialog on screen
+        dialog.update_idletasks()
+        screen_width = dialog.winfo_screenwidth()
+        screen_height = dialog.winfo_screenheight()
+        x = (screen_width - 400) // 2
+        y = (screen_height - 200) // 2
+        dialog.geometry(f"400x200+{x}+{y}")
+        
+        # Message
+        label = ctk.CTkLabel(dialog, text=message, font=("Sarabun", 14))
+        label.pack(pady=20, padx=20)
+        
+        # Variable to store result
+        result = {'value': False}
+        
+        def on_yes():
+            result['value'] = True
+            dialog.destroy()
             
+        def on_no():
+            result['value'] = False
+            dialog.destroy()
+        
+        # Buttons frame
+        button_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        button_frame.pack(pady=20)
+        
+        # Yes button
+        yes_button = ctk.CTkButton(
+            button_frame,
+            text="ใช่",
+            command=on_yes,
+            fg_color="#FF4B4B",
+            hover_color="#FF3333"
+        )
+        yes_button.pack(side="left", padx=10)
+        
+        # No button
+        no_button = ctk.CTkButton(
+            button_frame,
+            text="ไม่",
+            command=on_no
+        )
+        no_button.pack(side="left", padx=10)
+        
+        # Wait for dialog to close
+        dialog.wait_window()
+        
+        return result['value']
+        
     def show_borrow(self):
         # Clear any existing widgets
         for widget in self.app.winfo_children():
@@ -649,48 +729,104 @@ class LibraryApp:
         member_frame = ctk.CTkFrame(borrow_frame)
         member_frame.pack(pady=10, padx=20, fill="x")
         
-        # Scan button only (no QR entry)
-        scan_button = ctk.CTkButton(member_frame, text="สแกน QR Code", command=self.start_scan)
-        scan_button.pack(pady=5)
+        # Status display
+        self.borrow_status_label = ctk.CTkLabel(member_frame, text="กรุณาสแกนบัตรสมาชิก", font=("Helvetica", 18))
+        self.borrow_status_label.pack(pady=10)
         
         # Member info display
-        self.member_info_label = ctk.CTkLabel(member_frame, text="กรุณาสแกน QR Code สมาชิก")
+        self.member_info_label = ctk.CTkLabel(member_frame, text="", font=("Helvetica", 14))
         self.member_info_label.pack(pady=5)
         
-        # Book selection frame
+        # Scan button
+        scan_button = ctk.CTkButton(member_frame, text="สแกนบัตร", 
+                                  command=lambda: self.start_borrow_scan(),
+                                  height=60,
+                                  font=("Helvetica", 20))
+        scan_button.pack(pady=20)
+        
+        # Book search frame
         book_frame = ctk.CTkFrame(borrow_frame)
         book_frame.pack(pady=10, padx=20, fill="x")
         
-        # Book selection dropdown
-        self.book_var = ctk.StringVar(value="เลือกหนังสือ")
-        self.book_dropdown = ctk.CTkOptionMenu(book_frame, variable=self.book_var)
-        self.book_dropdown.pack(pady=5, padx=20, fill="x")
-        self.update_book_dropdown()
+        # Book search entry
+        self.book_code_entry = ctk.CTkEntry(book_frame, placeholder_text="กรอกรหัสหนังสือ")
+        self.book_code_entry.pack(side="left", padx=5, fill="x", expand=True)
         
-        # Due date selection
-        due_date_frame = ctk.CTkFrame(borrow_frame)
-        due_date_frame.pack(pady=10, padx=20, fill="x")
+        # Search button
+        search_button = ctk.CTkButton(book_frame, text="ค้นหา", 
+                                    command=self.search_book,
+                                    width=100)
+        search_button.pack(side="right", padx=5)
         
-        due_date_label = ctk.CTkLabel(due_date_frame, text="กำหนดคืน:")
-        due_date_label.pack(side="left", padx=10)
+        # Book info frame
+        self.book_info_frame = ctk.CTkFrame(borrow_frame)
+        self.book_info_frame.pack(pady=10, padx=20, fill="x")
         
-        self.due_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
-        due_date_entry = ctk.CTkEntry(due_date_frame, placeholder_text=self.due_date)
-        due_date_entry.pack(side="left", padx=10)
+        # Book info label (initially empty)
+        self.book_info_label = ctk.CTkLabel(self.book_info_frame, text="", font=("Helvetica", 14))
+        self.book_info_label.pack(pady=10)
+
+        # Due date frame
+        self.due_date_frame = ctk.CTkFrame(self.book_info_frame)
+        self.due_date_frame.pack(pady=10, fill="x")
+
+        # Due date label
+        due_date_label = ctk.CTkLabel(self.due_date_frame, text="กำหนดคืน:", font=("Helvetica", 14))
+        due_date_label.pack(side="left", padx=5)
+
+        # Default due date (7 days from now)
+        default_due_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+        self.due_date_entry = ctk.CTkEntry(self.due_date_frame, width=120)
+        self.due_date_entry.pack(side="left", padx=5)
+        self.due_date_entry.insert(0, default_due_date)
+
+        # Calendar button
+        calendar_button = ctk.CTkButton(self.due_date_frame, 
+                                      text="📅", 
+                                      width=40,
+                                      command=lambda: DatePicker(self.app, self.due_date_entry).show())
+        calendar_button.pack(side="left", padx=5)
+
+        # Quick buttons frame
+        quick_buttons_frame = ctk.CTkFrame(self.due_date_frame)
+        quick_buttons_frame.pack(side="left", padx=5)
+
+        # Quick selection buttons
+        ctk.CTkButton(quick_buttons_frame, 
+                     text="7 วัน",
+                     width=60,
+                     command=lambda: self.set_quick_date(7)).pack(side="left", padx=2)
         
-        # Borrow button (no qr_data param)
-        borrow_button = ctk.CTkButton(borrow_frame, text="ยืมหนังสือ", 
-                                    command=lambda: self.borrow_book(
-                                        self.book_var.get(),
-                                        due_date_entry.get() or self.due_date
-                                    ))
-        borrow_button.pack(pady=10)
+        ctk.CTkButton(quick_buttons_frame,
+                     text="14 วัน",
+                     width=60,
+                     command=lambda: self.set_quick_date(14)).pack(side="left", padx=2)
+
+        # Due date info
+        due_date_info = ctk.CTkLabel(self.due_date_frame, 
+                                   text="(รูปแบบ: YYYY-MM-DD)", 
+                                   font=("Helvetica", 12),
+                                   text_color="gray")
+        due_date_info.pack(side="left", padx=5)
+        
+        # Borrow button (initially hidden)
+        self.borrow_button = ctk.CTkButton(self.book_info_frame, text="ยืมหนังสือ", 
+                                         command=self.process_borrow,
+                                         font=("Helvetica", 16))
         
         # Back button
-        back_button = ctk.CTkButton(borrow_frame, text="กลับ", command=self.show_dashboard)
+        back_button = ctk.CTkButton(borrow_frame, text="กลับ", 
+                                  command=self.show_dashboard)
         back_button.pack(pady=10)
         
-    def start_scan(self, mode="borrow"):
+        # Store current member and book
+        self.current_member = None
+        self.current_book = None
+        
+        # Bind Enter key to search
+        self.book_code_entry.bind('<Return>', lambda e: self.search_book())
+
+    def start_borrow_scan(self):
         # Create new window for scanning
         scan_window = ctk.CTkToplevel(self.app)
         scan_window.title("สแกน QR Code")
@@ -813,26 +949,33 @@ class LibraryApp:
                 if not qr_queue.empty():
                     name, grade, number = qr_queue.get()
                     self.cursor.execute("""
-                        SELECT id, register_date, expire_date FROM members 
+                        SELECT id FROM members 
                         WHERE name = ? AND grade = ? AND number = ?
                     """, (name, grade, number))
                     member = self.cursor.fetchone()
                     if member:
-                        member_id, register_date, expire_date = member
-                        if mode == "return":
-                            self.return_member_info_label.configure(
-                                text=f"สมาชิก: {name}\nชั้น: {grade}\nเลขที่: {number}"
-                            )
-                            self.display_borrowed_books(member_id)
-                            self.show_popup("พบข้อมูลสมาชิกในระบบ", f"ชื่อ: {name}\nชั้น: {grade}\nเลขที่: {number}")
-                        else:
-                            self.scanned_member = (name, grade, number, register_date, expire_date)
-                            self.member_info_label.configure(
-                                text=f"สมาชิก: {name}\nชั้น: {grade}\nเลขที่: {number}"
-                            )
-                            self.show_popup("พบข้อมูลสมาชิกในระบบ", f"ชื่อ: {name}\nชั้น: {grade}\nเลขที่: {number}")
+                        self.current_member = {
+                            'id': member[0],
+                            'name': name,
+                            'grade': grade,
+                            'number': number
+                        }
+                        # Update status and member info
+                        self.borrow_status_label.configure(
+                            text="พบข้อมูลสมาชิก",
+                            text_color="green"
+                        )
+                        self.member_info_label.configure(
+                            text=f"สมาชิก: {name}\nชั้น: {grade}\nเลขที่: {number}"
+                        )
+                        # Enable book search
+                        self.book_code_entry.configure(state="normal")
+                        self.book_code_entry.focus()
                     else:
-                        self.show_popup("ไม่พบข้อมูลสมาชิกในระบบ", f"ชื่อ: {name}\nชั้น: {grade}\nเลขที่: {number}")
+                        self.borrow_status_label.configure(
+                            text="ไม่พบข้อมูลสมาชิกในระบบ",
+                            text_color="red"
+                        )
                 if scan_window.winfo_exists():
                     scan_window.after(100, process_qr_data)
             except Exception as e:
@@ -847,51 +990,123 @@ class LibraryApp:
             scan_window.destroy()
             
         scan_window.protocol("WM_DELETE_WINDOW", on_closing)
-        
-    def update_book_dropdown(self):
-        self.cursor.execute("SELECT id, code, title FROM books WHERE status = 'ว่าง'")
-        books = self.cursor.fetchall()
-        self.book_options = {f"{book[1]} - {book[2]}": book[0] for book in books}
-        if hasattr(self, 'book_dropdown'):
-            self.book_dropdown.configure(values=list(self.book_options.keys()))
-            if list(self.book_options.keys()):
-                self.book_dropdown.set(list(self.book_options.keys())[0])
-            else:
-                self.book_dropdown.set("เลือกหนังสือ")
+
+    def search_book(self):
+        if not self.current_member:
+            self.show_error("กรุณาสแกนบัตรสมาชิกก่อน")
+            return
             
-    def borrow_book(self, book_text, due_date):
-        print("เลือก:", book_text)
-        print("ตัวเลือก:", list(self.book_options.keys()))
-        if not hasattr(self, 'scanned_member') or not self.scanned_member:
-            self.show_error("กรุณาสแกน QR Code สมาชิกก่อน")
+        book_code = self.book_code_entry.get().strip()
+        if not book_code:
+            self.show_error("กรุณากรอกรหัสหนังสือ")
             return
-        if book_text == "เลือกหนังสือ":
-            self.show_error("กรุณาเลือกหนังสือ")
-            return
-        if book_text not in self.book_options:
-            self.show_error("ไม่พบหนังสือในระบบ กรุณาลองใหม่")
-            return
+            
         try:
-            name, grade, number, register_date, expire_date = self.scanned_member
-            self.cursor.execute("SELECT id FROM members WHERE name = ? AND grade = ? AND number = ?", (name, grade, number))
-            member = self.cursor.fetchone()
-            if not member:
-                self.show_error("ไม่พบข้อมูลสมาชิก")
+            self.cursor.execute("""
+                SELECT id, code, title, status
+                FROM books
+                WHERE code = ?
+            """, (book_code,))
+            book = self.cursor.fetchone()
+            
+            if not book:
+                self.book_info_label.configure(text="ไม่พบหนังสือในระบบ")
+                self.current_book = None
+                self.borrow_button.pack_forget()
                 return
-            member_id = member[0]
-            book_id = self.book_options[book_text]
-            borrow_date = datetime.now().strftime("%Y-%m-%d")
-            self.cursor.execute('''
-                INSERT INTO borrow_log (member_id, book_id, borrow_date, return_due, returned)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (member_id, book_id, borrow_date, due_date, 0))
-            self.cursor.execute("UPDATE books SET status = 'ยืมแล้ว' WHERE id = ?", (book_id,))
-            self.conn.commit()
-            self.show_success("ยืมหนังสือสำเร็จ")
-            self.show_dashboard()
+                
+            if book[3] != "ว่าง":
+                self.book_info_label.configure(text=f"หนังสือรหัส {book_code} ไม่พร้อมให้ยืม\nสถานะ: {book[3]}")
+                self.current_book = None
+                self.borrow_button.pack_forget()
+                return
+                
+            # Show book info and enable borrow button
+            self.book_info_label.configure(text=f"หนังสือที่พบ:\nรหัส: {book[1]}\nชื่อ: {book[2]}\nสถานะ: {book[3]}")
+            self.current_book = book
+            self.borrow_button.pack(pady=10)
+            
         except Exception as e:
             self.show_error(f"เกิดข้อผิดพลาด: {str(e)}")
+
+    def process_borrow(self):
+        if not self.current_member or not self.current_book:
+            self.show_error("ข้อมูลไม่ครบถ้วน")
+            return
+
+        # Validate due date
+        try:
+            due_date = self.due_date_entry.get().strip()
+            if not due_date:
+                self.show_error("กรุณากำหนดวันคืนหนังสือ")
+                return
+
+            # Validate date format
+            datetime.strptime(due_date, "%Y-%m-%d")
+
+            # Check if due date is in the past
+            if datetime.strptime(due_date, "%Y-%m-%d").date() < datetime.now().date():
+                self.show_error("กำหนดคืนต้องไม่เป็นวันที่ผ่านมาแล้ว")
+                return
+
+        except ValueError:
+            self.show_error("รูปแบบวันที่ไม่ถูกต้อง กรุณาใช้รูปแบบ YYYY-MM-DD")
+            return
             
+        try:
+            # Check if member has overdue books
+            self.cursor.execute("""
+                SELECT COUNT(*) FROM borrow_log
+                WHERE member_id = ? AND returned = 0 AND return_due < date('now')
+            """, (self.current_member['id'],))
+            overdue_count = self.cursor.fetchone()[0]
+            
+            if overdue_count > 0:
+                self.show_error("ไม่สามารถยืมได้ เนื่องจากมีหนังสือค้างส่ง")
+                return
+                
+            # Check if member has reached borrow limit
+            self.cursor.execute("""
+                SELECT COUNT(*) FROM borrow_log
+                WHERE member_id = ? AND returned = 0
+            """, (self.current_member['id'],))
+            current_borrows = self.cursor.fetchone()[0]
+            
+            if current_borrows >= 3:  # Maximum 3 books per member
+                self.show_error("ไม่สามารถยืมได้ เนื่องจากยืมครบจำนวนที่กำหนด (3 เล่ม)")
+                return
+                
+            # Process borrow
+            borrow_date = datetime.now().strftime("%Y-%m-%d")
+            
+            self.cursor.execute("""
+                INSERT INTO borrow_log (member_id, book_id, borrow_date, return_due, returned)
+                VALUES (?, ?, ?, ?, 0)
+            """, (self.current_member['id'], self.current_book[0], borrow_date, due_date))
+            
+            self.cursor.execute("""
+                UPDATE books SET status = 'ยืมแล้ว'
+                WHERE id = ?
+            """, (self.current_book[0],))
+            
+            self.conn.commit()
+            
+            # Show success message
+            self.show_success(f"""ยืมหนังสือสำเร็จ
+สมาชิก: {self.current_member['name']}
+หนังสือ: {self.current_book[2]}
+วันที่ยืม: {borrow_date}
+กำหนดคืน: {due_date}""")
+            
+            # Clear book info
+            self.book_code_entry.delete(0, 'end')
+            self.book_info_label.configure(text="")
+            self.current_book = None
+            self.borrow_button.pack_forget()
+            
+        except Exception as e:
+            self.show_error(f"เกิดข้อผิดพลาด: {str(e)}")
+
     def show_return(self):
         # Clear any existing widgets
         for widget in self.app.winfo_children():
@@ -909,32 +1124,189 @@ class LibraryApp:
         member_frame = ctk.CTkFrame(return_frame)
         member_frame.pack(pady=10, padx=20, fill="x")
         
-        # QR code entry frame
-        qr_frame = ctk.CTkFrame(member_frame)
-        qr_frame.pack(pady=5, padx=20, fill="x")
-        
-        # QR code entry
-        qr_entry = ctk.CTkEntry(qr_frame, placeholder_text="สแกน QR Code หรือวางข้อมูล")
-        qr_entry.pack(side="left", padx=5, fill="x", expand=True)
-        
-        # Scan button
-        scan_button = ctk.CTkButton(qr_frame, text="สแกน QR Code", 
-                                    command=lambda: self.start_scan(mode="return"))
-        scan_button.pack(side="right", padx=5)
+        # Status display
+        self.return_status_label = ctk.CTkLabel(member_frame, text="กรุณาสแกนบัตรสมาชิก", font=("Helvetica", 18))
+        self.return_status_label.pack(pady=10)
         
         # Member info display
-        self.return_member_info_label = ctk.CTkLabel(member_frame, text="")
+        self.return_member_info_label = ctk.CTkLabel(member_frame, text="", font=("Helvetica", 14))
         self.return_member_info_label.pack(pady=5)
         
-        # Borrowed books frame
-        self.borrowed_books_frame = ctk.CTkFrame(return_frame)
-        self.borrowed_books_frame.pack(pady=10, padx=20, fill="x")
+        # Scan button
+        scan_button = ctk.CTkButton(member_frame, text="สแกนบัตร", 
+                                  command=lambda: self.start_return_scan(),
+                                  height=60,
+                                  font=("Helvetica", 20))
+        scan_button.pack(pady=20)
+        
+        # Create borrowed books frame
+        self.borrowed_books_frame = ctk.CTkScrollableFrame(return_frame)
+        self.borrowed_books_frame.pack(pady=10, padx=20, fill="both", expand=True)
         
         # Back button
         back_button = ctk.CTkButton(return_frame, text="กลับ", 
                                   command=self.show_dashboard)
         back_button.pack(pady=10)
+
+    def start_return_scan(self):
+        # Create new window for scanning
+        scan_window = ctk.CTkToplevel(self.app)
+        scan_window.title("สแกน QR Code")
+        scan_window.geometry("800x600")
         
+        # Create frame for video
+        video_frame = ctk.CTkFrame(scan_window)
+        video_frame.pack(pady=10, padx=10, fill="both", expand=True)
+        
+        # Create label for video
+        video_label = ctk.CTkLabel(video_frame, text="")
+        video_label.pack(fill="both", expand=True)
+        
+        # Add instruction label
+        instruction_label = ctk.CTkLabel(scan_window, 
+            text="นำ QR Code มาวางตรงกล้อง\nรอสักครู่ระบบจะสแกนอัตโนมัติ",
+            font=("Helvetica", 16))
+        instruction_label.pack(pady=10)
+        
+        # Add status label
+        status_label = ctk.CTkLabel(scan_window,
+            text="กำลังรอสแกน...",
+            font=("Helvetica", 14),
+            text_color="yellow")
+        status_label.pack(pady=5)
+        
+        # Start webcam
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            self.show_error("ไม่สามารถเปิดกล้องได้")
+            scan_window.destroy()
+            return
+            
+        # Set camera resolution
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        
+        # Create a queue for thread communication
+        qr_queue = Queue()
+        
+        def scan_qr():
+            while True:
+                try:
+                    ret, frame = cap.read()
+                    if not ret:
+                        print("Failed to grab frame")
+                        break
+                        
+                    # Resize frame for better display
+                    frame = cv2.resize(frame, (640, 480))
+                    
+                    # Convert frame to grayscale
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    
+                    # Apply threshold to make QR code more visible
+                    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                    
+                    # Try to decode QR code from both original and thresholded image
+                    decoded_objects = decode(frame)
+                    if not decoded_objects:
+                        decoded_objects = decode(thresh)
+                    
+                    for obj in decoded_objects:
+                        try:
+                            # Draw rectangle around QR code
+                            points = obj.polygon
+                            if len(points) > 4:
+                                hull = cv2.convexHull(np.array([point for point in points], dtype=np.float32))
+                                cv2.polylines(frame, [hull], True, (0, 255, 0), 2)
+                            else:
+                                cv2.polylines(frame, [np.array(points, dtype=np.int32)], True, (0, 255, 0), 2)
+                            
+                            # Decode QR data
+                            qr_data = obj.data.decode('utf-8')
+                            decoded_data = base64.b64decode(qr_data).decode()
+                            name, grade, number, register_date, expire_date = decoded_data.split("|")
+                            
+                            # Update status
+                            status_label.configure(text="✓ สแกนสำเร็จ!", text_color="green")
+                            
+                            # Put data in queue for main thread to process
+                            qr_queue.put((name, grade, number))
+                            
+                            # Close scan window after a short delay
+                            scan_window.after(1000, lambda: [scan_window.destroy(), cap.release()])
+                            return
+                            
+                        except Exception as e:
+                            print(f"Error decoding QR: {str(e)}")
+                            status_label.configure(text="❌ ไม่สามารถอ่าน QR Code ได้", text_color="red")
+                    
+                    # Convert frame to CTkImage
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frame_pil = Image.fromarray(frame_rgb)
+                    frame_ctk = ctk.CTkImage(light_image=frame_pil, dark_image=frame_pil, size=(640, 480))
+                    
+                    # Update video label
+                    video_label.configure(image=frame_ctk)
+                    
+                except Exception as e:
+                    print(f"Error in scan loop: {str(e)}")
+                    break
+                    
+                # Check if window is closed
+                if not scan_window.winfo_exists():
+                    break
+                    
+                time.sleep(0.03)  # 30 FPS
+                
+            # Clean up
+            cap.release()
+                
+        # Start scanning in separate thread
+        scan_thread = threading.Thread(target=scan_qr)
+        scan_thread.daemon = True
+        scan_thread.start()
+        
+        def process_qr_data():
+            try:
+                if not qr_queue.empty():
+                    name, grade, number = qr_queue.get()
+                    self.cursor.execute("""
+                        SELECT id FROM members 
+                        WHERE name = ? AND grade = ? AND number = ?
+                    """, (name, grade, number))
+                    member = self.cursor.fetchone()
+                    if member:
+                        member_id = member[0]
+                        # Update status and member info
+                        self.return_status_label.configure(
+                            text="พบข้อมูลสมาชิก",
+                            text_color="green"
+                        )
+                        self.return_member_info_label.configure(
+                            text=f"สมาชิก: {name}\nชั้น: {grade}\nเลขที่: {number}"
+                        )
+                        # Display borrowed books
+                        self.display_borrowed_books(member_id)
+                    else:
+                        self.return_status_label.configure(
+                            text="ไม่พบข้อมูลสมาชิกในระบบ",
+                            text_color="red"
+                        )
+                if scan_window.winfo_exists():
+                    scan_window.after(100, process_qr_data)
+            except Exception as e:
+                print(f"Error processing QR data: {str(e)}")
+        
+        # Start processing QR data
+        scan_window.after(100, process_qr_data)
+        
+        # Handle window close
+        def on_closing():
+            cap.release()
+            scan_window.destroy()
+            
+        scan_window.protocol("WM_DELETE_WINDOW", on_closing)
+
     def display_borrowed_books(self, member_id):
         # Clear existing books
         for widget in self.borrowed_books_frame.winfo_children():
@@ -950,9 +1322,21 @@ class LibraryApp:
         books = self.cursor.fetchall()
         
         if not books:
-            no_books_label = ctk.CTkLabel(self.borrowed_books_frame, text="ไม่มีหนังสือที่ยืมอยู่")
+            no_books_label = ctk.CTkLabel(
+                self.borrowed_books_frame, 
+                text="ไม่มีหนังสือที่ยืมอยู่",
+                font=("Helvetica", 14)
+            )
             no_books_label.pack(pady=10)
             return
+            
+        # Add header
+        header_label = ctk.CTkLabel(
+            self.borrowed_books_frame,
+            text="รายการหนังสือที่ยืม",
+            font=("Helvetica", 16, "bold")
+        )
+        header_label.pack(pady=(0, 10))
             
         # Display each book
         for book in books:
@@ -960,17 +1344,21 @@ class LibraryApp:
             book_frame.pack(pady=5, padx=10, fill="x")
             
             # Book info
-            info_text = f"รหัส: {book[1]} | ชื่อ: {book[2]} | ยืม: {book[3]} | คืน: {book[4]}"
-            info_label = ctk.CTkLabel(book_frame, text=info_text)
-            info_label.pack(side="left", padx=10)
+            info_text = f"รหัส: {book[1]}\nชื่อ: {book[2]}\nวันที่ยืม: {book[3]}\nกำหนดคืน: {book[4]}"
+            info_label = ctk.CTkLabel(book_frame, text=info_text, font=("Helvetica", 12))
+            info_label.pack(side="left", padx=10, pady=5)
             
             # Return button
             return_button = ctk.CTkButton(
-                book_frame, text="คืน",
-                command=lambda b=book: self.return_book(b[0], member_id)
+                book_frame,
+                text="คืน",
+                command=lambda b=book: self.return_book(b[0], member_id),
+                width=80,
+                height=32,
+                font=("Helvetica", 12)
             )
-            return_button.pack(side="right", padx=5)
-            
+            return_button.pack(side="right", padx=10, pady=5)
+        
     def return_book(self, book_id, member_id):
         try:
             self.cursor.execute('''
@@ -1394,8 +1782,744 @@ class LibraryApp:
         back_btn = ctk.CTkButton(about_frame, text="กลับ", command=self.show_dashboard)
         back_btn.pack(pady=20)
 
+    def show_access_scanner(self):
+        # Clear any existing widgets
+        for widget in self.app.winfo_children():
+            widget.destroy()
+            
+        # Create scanner frame
+        scanner_frame = ctk.CTkFrame(self.app)
+        scanner_frame.pack(pady=20, padx=40, fill="both", expand=True)
+        
+        # Title
+        title_label = ctk.CTkLabel(scanner_frame, text="บันทึกการเข้าออกห้องสมุด", font=("Helvetica", 24))
+        title_label.pack(pady=20)
+        
+        # Status display
+        self.access_status_label = ctk.CTkLabel(scanner_frame, text="กรุณาสแกนบัตรสมาชิก", font=("Helvetica", 18))
+        self.access_status_label.pack(pady=10)
+        
+        # Last scan info
+        self.last_scan_label = ctk.CTkLabel(scanner_frame, text="", font=("Helvetica", 14))
+        self.last_scan_label.pack(pady=10)
+        
+        # Scan button
+        scan_button = ctk.CTkButton(scanner_frame, text="สแกนบัตร", 
+                                  command=lambda: self.start_access_scan(),
+                                  height=60,
+                                  font=("Helvetica", 20))
+        scan_button.pack(pady=20)
+        
+        # Back button
+        back_button = ctk.CTkButton(scanner_frame, text="กลับ", 
+                                  command=self.show_dashboard)
+        back_button.pack(pady=10)
+        
+    def start_access_scan(self):
+        # Create new window for scanning
+        scan_window = ctk.CTkToplevel(self.app)
+        scan_window.title("สแกน QR Code")
+        scan_window.geometry("800x600")
+        
+        # Create frame for video
+        video_frame = ctk.CTkFrame(scan_window)
+        video_frame.pack(pady=10, padx=10, fill="both", expand=True)
+        
+        # Create label for video
+        video_label = ctk.CTkLabel(video_frame, text="")
+        video_label.pack(fill="both", expand=True)
+        
+        # Add instruction label
+        instruction_label = ctk.CTkLabel(scan_window, 
+            text="นำ QR Code มาวางตรงกล้อง\nรอสักครู่ระบบจะสแกนอัตโนมัติ",
+            font=("Helvetica", 16))
+        instruction_label.pack(pady=10)
+        
+        # Add status label
+        status_label = ctk.CTkLabel(scan_window,
+            text="กำลังรอสแกน...",
+            font=("Helvetica", 14),
+            text_color="yellow")
+        status_label.pack(pady=5)
+        
+        # Start webcam
+        cap = cv2.VideoCapture(0)
+        if not cap.isOpened():
+            self.show_error("ไม่สามารถเปิดกล้องได้")
+            scan_window.destroy()
+            return
+            
+        # Set camera resolution
+        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+        
+        # Create a queue for thread communication
+        qr_queue = Queue()
+        
+        def scan_qr():
+            while True:
+                try:
+                    ret, frame = cap.read()
+                    if not ret:
+                        print("Failed to grab frame")
+                        break
+                        
+                    # Resize frame for better display
+                    frame = cv2.resize(frame, (640, 480))
+                    
+                    # Convert frame to grayscale
+                    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                    
+                    # Apply threshold to make QR code more visible
+                    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+                    
+                    # Try to decode QR code from both original and thresholded image
+                    decoded_objects = decode(frame)
+                    if not decoded_objects:
+                        decoded_objects = decode(thresh)
+                    
+                    for obj in decoded_objects:
+                        try:
+                            # Draw rectangle around QR code
+                            points = obj.polygon
+                            if len(points) > 4:
+                                hull = cv2.convexHull(np.array([point for point in points], dtype=np.float32))
+                                cv2.polylines(frame, [hull], True, (0, 255, 0), 2)
+                            else:
+                                cv2.polylines(frame, [np.array(points, dtype=np.int32)], True, (0, 255, 0), 2)
+                            
+                            # Decode QR data
+                            qr_data = obj.data.decode('utf-8')
+                            decoded_data = base64.b64decode(qr_data).decode()
+                            name, grade, number, register_date, expire_date = decoded_data.split("|")
+                            
+                            # Update status
+                            status_label.configure(text="✓ สแกนสำเร็จ!", text_color="green")
+                            
+                            # Put data in queue for main thread to process
+                            qr_queue.put((name, grade, number))
+                            
+                            # Close scan window after a short delay
+                            scan_window.after(1000, lambda: [scan_window.destroy(), cap.release()])
+                            return
+                            
+                        except Exception as e:
+                            print(f"Error decoding QR: {str(e)}")
+                            status_label.configure(text="❌ ไม่สามารถอ่าน QR Code ได้", text_color="red")
+                    
+                    # Convert frame to CTkImage
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    frame_pil = Image.fromarray(frame_rgb)
+                    frame_ctk = ctk.CTkImage(light_image=frame_pil, dark_image=frame_pil, size=(640, 480))
+                    
+                    # Update video label
+                    video_label.configure(image=frame_ctk)
+                    
+                except Exception as e:
+                    print(f"Error in scan loop: {str(e)}")
+                    break
+                    
+                # Check if window is closed
+                if not scan_window.winfo_exists():
+                    break
+                    
+                time.sleep(0.03)  # 30 FPS
+                
+            # Clean up
+            cap.release()
+                
+        # Start scanning in separate thread
+        scan_thread = threading.Thread(target=scan_qr)
+        scan_thread.daemon = True
+        scan_thread.start()
+        
+        def process_qr_data():
+            try:
+                if not qr_queue.empty():
+                    name, grade, number = qr_queue.get()
+                    self.cursor.execute("""
+                        SELECT id FROM members 
+                        WHERE name = ? AND grade = ? AND number = ?
+                    """, (name, grade, number))
+                    member = self.cursor.fetchone()
+                    if member:
+                        member_id = member[0]
+                        # Get last access record for this member
+                        self.cursor.execute("""
+                            SELECT action FROM access_log 
+                            WHERE member_id = ? 
+                            ORDER BY access_time DESC LIMIT 1
+                        """, (member_id,))
+                        last_action = self.cursor.fetchone()
+                        
+                        # Determine action (if last action was 'เข้า', then 'ออก', and vice versa)
+                        action = "ออก" if last_action and last_action[0] == "เข้า" else "เข้า"
+                        
+                        # Record access
+                        self.cursor.execute("""
+                            INSERT INTO access_log (member_id, access_time, action)
+                            VALUES (?, datetime('now', 'localtime'), ?)
+                        """, (member_id, action))
+                        self.conn.commit()
+                        
+                        # Update status labels
+                        self.access_status_label.configure(
+                            text=f"บันทึกการ{action}ห้องสมุดสำเร็จ",
+                            text_color="green"
+                        )
+                        self.last_scan_label.configure(
+                            text=f"สมาชิก: {name}\nชั้น: {grade}\nเลขที่: {number}\nเวลา: {datetime.now().strftime('%H:%M:%S')}"
+                        )
+                    else:
+                        self.access_status_label.configure(
+                            text="ไม่พบข้อมูลสมาชิกในระบบ",
+                            text_color="red"
+                        )
+                if scan_window.winfo_exists():
+                    scan_window.after(100, process_qr_data)
+            except Exception as e:
+                print(f"Error processing QR data: {str(e)}")
+        
+        # Start processing QR data
+        scan_window.after(100, process_qr_data)
+        
+        # Handle window close
+        def on_closing():
+            cap.release()
+            scan_window.destroy()
+            
+        scan_window.protocol("WM_DELETE_WINDOW", on_closing)
+        
+    def show_access_history(self):
+        # Clear any existing widgets
+        for widget in self.app.winfo_children():
+            widget.destroy()
+            
+        # Create history frame
+        history_frame = ctk.CTkFrame(self.app)
+        history_frame.pack(pady=20, padx=40, fill="both", expand=True)
+        
+        # Title
+        title_label = ctk.CTkLabel(history_frame, text="ประวัติการเข้าออกห้องสมุด", font=("Helvetica", 24))
+        title_label.pack(pady=20)
+        
+        # Search frame
+        search_frame = ctk.CTkFrame(history_frame)
+        search_frame.pack(pady=10, padx=20, fill="x")
+        
+        # Search fields
+        member_entry = ctk.CTkEntry(search_frame, placeholder_text="ค้นหาตามชื่อสมาชิก")
+        member_entry.pack(side="left", padx=5, fill="x", expand=True)
+        
+        date_entry = ctk.CTkEntry(search_frame, placeholder_text="ค้นหาตามวันที่ (YYYY-MM-DD)")
+        date_entry.pack(side="left", padx=5, fill="x", expand=True)
+        
+        # Search button
+        search_button = ctk.CTkButton(search_frame, text="ค้นหา", 
+                                    command=lambda: self.search_access_history(
+                                        member_entry.get(),
+                                        date_entry.get()
+                                    ))
+        search_button.pack(side="left", padx=5)
+        
+        # Export button
+        export_button = ctk.CTkButton(search_frame, text="Export PDF", 
+                                    command=self.export_access_history)
+        export_button.pack(side="left", padx=5)
+        
+        # History display frame
+        self.access_history_frame = ctk.CTkScrollableFrame(history_frame)
+        self.access_history_frame.pack(pady=10, padx=20, fill="both", expand=True)
+        
+        # Back button
+        back_button = ctk.CTkButton(history_frame, text="กลับ", 
+                                  command=self.show_dashboard)
+        back_button.pack(pady=10)
+        
+        # Display initial history
+        self.display_access_history()
+        
+    def display_access_history(self, member_filter="", date_filter=""):
+        # Clear existing history
+        for widget in self.access_history_frame.winfo_children():
+            widget.destroy()
+            
+        # Build query
+        query = '''
+            SELECT m.name, m.grade, m.number, al.access_time, al.action
+            FROM access_log al
+            JOIN members m ON al.member_id = m.id
+            WHERE 1=1
+        '''
+        params = []
+        
+        if member_filter:
+            query += " AND (m.name LIKE ? OR m.grade LIKE ? OR m.number LIKE ?)"
+            params.extend([f"%{member_filter}%"] * 3)
+            
+        if date_filter:
+            query += " AND date(al.access_time) = ?"
+            params.append(date_filter)
+            
+        query += " ORDER BY al.access_time DESC"
+        
+        # Execute query
+        self.cursor.execute(query, params)
+        records = self.cursor.fetchall()
+        
+        if not records:
+            no_records_label = ctk.CTkLabel(self.access_history_frame, text="ไม่พบประวัติ")
+            no_records_label.pack(pady=10)
+            return
+            
+        # Display each record
+        for record in records:
+            record_frame = ctk.CTkFrame(self.access_history_frame)
+            record_frame.pack(pady=5, padx=10, fill="x")
+            
+            # Record info
+            info_text = f"สมาชิก: {record[0]} ({record[1]}/{record[2]}) | เวลา: {record[3]} | การทำรายการ: {record[4]}"
+            info_label = ctk.CTkLabel(record_frame, text=info_text)
+            info_label.pack(pady=5, padx=10)
+            
+    def search_access_history(self, member_filter, date_filter):
+        self.display_access_history(member_filter, date_filter)
+        
+    def export_access_history(self):
+        try:
+            # ตรวจสอบว่ามีโฟลเดอร์สำหรับเก็บรายงานหรือไม่
+            if not os.path.exists('reports'):
+                os.makedirs('reports')
+
+            # Get all history records
+            self.cursor.execute('''
+                SELECT m.name, m.grade, m.number, al.access_time, al.action
+                FROM access_log al
+                JOIN members m ON al.member_id = m.id
+                ORDER BY al.access_time DESC
+            ''')
+            records = self.cursor.fetchall()
+            
+            if not records:
+                self.show_error("ไม่พบข้อมูลสำหรับการ export")
+                return
+
+            # Create PDF file
+            filename = os.path.join('reports', f"access_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")
+            doc = SimpleDocTemplate(
+                filename,
+                pagesize=A4,
+                rightMargin=30,
+                leftMargin=30,
+                topMargin=30,
+                bottomMargin=30
+            )
+            
+            # Create table data
+            data = [["ชื่อสมาชิก", "ชั้น", "เลขที่", "เวลา", "การทำรายการ"]]
+            for record in records:
+                data.append([
+                    str(record[0]),  # name
+                    str(record[1]),  # grade
+                    str(record[2]),  # number
+                    str(record[3]),  # time
+                    str(record[4])   # action
+                ])
+            
+            # Register Thai font
+            font_path = os.path.join('assets', 'fonts', 'Sarabun-Regular.ttf')
+            font_path_bold = os.path.join('assets', 'fonts', 'Sarabun-Bold.ttf')
+            
+            if not os.path.exists(font_path) or not os.path.exists(font_path_bold):
+                self.show_error("ไม่พบไฟล์ฟอนต์ที่จำเป็น กรุณาตรวจสอบโฟลเดอร์ assets/fonts")
+                return
+                
+            pdfmetrics.registerFont(TTFont('Sarabun', font_path))
+            pdfmetrics.registerFont(TTFont('Sarabun-Bold', font_path_bold))
+            
+            # Create styles
+            styles = getSampleStyleSheet()
+            header_style = ParagraphStyle(
+                'HeaderStyle',
+                parent=styles['Normal'],
+                fontName='Sarabun-Bold',
+                fontSize=13,
+                textColor=colors.white,
+                alignment=1
+            )
+            
+            cell_style = ParagraphStyle(
+                'CellStyle',
+                parent=styles['Normal'],
+                fontName='Sarabun',
+                fontSize=12,
+                alignment=1
+            )
+            
+            # Format data with Thai font support
+            formatted_data = [[Paragraph(str(cell), header_style) for cell in data[0]]]
+            for row in data[1:]:
+                formatted_data.append([Paragraph(str(cell), cell_style) for cell in row])
+            
+            # Set column widths
+            col_widths = [120, 60, 60, 120, 80]
+            
+            # Create table
+            table = Table(formatted_data, colWidths=col_widths, repeatRows=1)
+            table.setStyle(TableStyle([
+                # Header style
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#4B0082')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, 0), 'Sarabun-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 13),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('TOPPADDING', (0, 0), (-1, 0), 12),
+                
+                # Content style
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#E6E6FA')),
+                ('TEXTCOLOR', (0, 1), (-1, -1), colors.HexColor('#222222')),
+                ('ALIGN', (0, 1), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 1), (-1, -1), 'Sarabun'),
+                ('FONTSIZE', (0, 1), (-1, -1), 12),
+                ('BOTTOMPADDING', (0, 1), (-1, -1), 10),
+                ('TOPPADDING', (0, 1), (-1, -1), 10),
+                
+                # Grid
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#4B0082')),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.HexColor('#E6E6FA'), colors.HexColor('#F0F0FF')])
+            ]))
+            
+            # Add title
+            title_style = ParagraphStyle(
+                'TitleStyle',
+                parent=styles['Normal'],
+                fontName='Sarabun-Bold',
+                fontSize=16,
+                alignment=1,
+                spaceAfter=30
+            )
+            title = Paragraph("รายงานประวัติการเข้าออกห้องสมุด", title_style)
+            
+            # Add date
+            date_style = ParagraphStyle(
+                'DateStyle',
+                parent=styles['Normal'],
+                fontName='Sarabun',
+                fontSize=12,
+                alignment=1,
+                spaceAfter=20
+            )
+            current_date = Paragraph(
+                f"วันที่ออกรายงาน: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}",
+                date_style
+            )
+            
+            # Build PDF
+            elements = [title, current_date, table]
+            doc.build(elements)
+            
+            self.show_success(f"Export สำเร็จ: {filename}")
+            
+            # เปิดไฟล์ PDF หลังจาก export เสร็จ
+            if os.name == 'nt':  # Windows
+                os.startfile(filename)
+            else:  # Linux/Mac
+                import subprocess
+                subprocess.run(['xdg-open', filename])
+                
+        except Exception as e:
+            self.show_error(f"เกิดข้อผิดพลาด: {str(e)}")
+            print(f"Error details: {str(e)}")  # For debugging
+
+    def export_excel_template(self):
+        try:
+            # Create sample data
+            sample_data = {
+                'รหัสหนังสือ': ['001', '002'],
+                'ชื่อเรื่อง': ['ตัวอย่างหนังสือ 1', 'ตัวอย่างหนังสือ 2']
+            }
+            df = pd.DataFrame(sample_data)
+            
+            # Save to Excel
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx")],
+                initialfile="book_import_template.xlsx"
+            )
+            
+            if filename:
+                df.to_excel(filename, index=False)
+                self.show_success(f"บันทึกแม่แบบไฟล์ Excel สำเร็จ: {filename}")
+                
+                # เปิดไฟล์หลังจากบันทึก
+                if os.name == 'nt':  # Windows
+                    os.startfile(filename)
+                else:  # Linux/Mac
+                    import subprocess
+                    subprocess.run(['xdg-open', filename])
+        except Exception as e:
+            self.show_error(f"เกิดข้อผิดพลาด: {str(e)}")
+
+    def import_books_from_excel(self):
+        try:
+            filename = filedialog.askopenfilename(
+                filetypes=[("Excel files", "*.xlsx")],
+                title="เลือกไฟล์ Excel ที่ต้องการนำเข้า"
+            )
+            
+            if not filename:
+                return
+                
+            # Read Excel file
+            df = pd.read_excel(filename)
+            
+            # Validate columns
+            required_columns = ['รหัสหนังสือ', 'ชื่อเรื่อง']
+            if not all(col in df.columns for col in required_columns):
+                self.show_error("รูปแบบไฟล์ Excel ไม่ถูกต้อง กรุณาใช้แม่แบบที่กำหนด")
+                return
+                
+            # Start import
+            success_count = 0
+            error_count = 0
+            error_messages = []
+            
+            for index, row in df.iterrows():
+                try:
+                    # Check if book code already exists
+                    self.cursor.execute("SELECT id FROM books WHERE code = ?", (str(row['รหัสหนังสือ']),))
+                    if self.cursor.fetchone():
+                        error_count += 1
+                        error_messages.append(f"รหัส {row['รหัสหนังสือ']} มีอยู่ในระบบแล้ว")
+                        continue
+                        
+                    # Insert new book
+                    self.cursor.execute('''
+                        INSERT INTO books (code, title, status)
+                        VALUES (?, ?, ?)
+                    ''', (str(row['รหัสหนังสือ']), str(row['ชื่อเรื่อง']), "ว่าง"))
+                    success_count += 1
+                    
+                except Exception as e:
+                    error_count += 1
+                    error_messages.append(f"ผิดพลาด: {str(e)}")
+                    
+            self.conn.commit()
+            
+            # Show result
+            result_message = f"นำเข้าสำเร็จ: {success_count} รายการ\n"
+            if error_count > 0:
+                result_message += f"ผิดพลาด: {error_count} รายการ\n"
+                result_message += "\n".join(error_messages[:5])  # Show first 5 errors
+                if len(error_messages) > 5:
+                    result_message += f"\n... และอีก {len(error_messages) - 5} ข้อผิดพลาด"
+                    
+            if success_count > 0:
+                self.show_success(result_message)
+            else:
+                self.show_error(result_message)
+                
+            self.show_book_management()  # Refresh view
+            
+        except Exception as e:
+            self.show_error(f"เกิดข้อผิดพลาด: {str(e)}")
+
     def run(self):
         self.app.mainloop()
+
+class DatePicker:
+    def __init__(self, parent, entry_widget):
+        self.parent = parent
+        self.entry_widget = entry_widget
+        self.top = None
+        
+        # Thai month names
+        self.thai_months = [
+            "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+            "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"
+        ]
+        
+    def show(self):
+        if self.top is not None and self.top.winfo_exists():
+            return
+            
+        self.top = ctk.CTkToplevel(self.parent)
+        self.top.title("เลือกวันที่")
+        
+        # Get current date from entry or use today
+        try:
+            current_date = datetime.strptime(self.entry_widget.get(), "%Y-%m-%d")
+        except:
+            current_date = datetime.now()
+            
+        self.year = current_date.year
+        self.month = current_date.month
+        
+        # Month and Year Selection Frame
+        nav_frame = ctk.CTkFrame(self.top)
+        nav_frame.pack(pady=5, padx=5, fill="x")
+        
+        # Previous Month Button
+        prev_month = ctk.CTkButton(nav_frame, text="◀", width=30, 
+                                 command=self.prev_month)
+        prev_month.pack(side="left", padx=5)
+        
+        # Month Label
+        self.month_label = ctk.CTkLabel(nav_frame, 
+                                      text=f"{self.thai_months[self.month-1]} {self.year}",
+                                      font=("Helvetica", 14))
+        self.month_label.pack(side="left", expand=True)
+        
+        # Next Month Button
+        next_month = ctk.CTkButton(nav_frame, text="▶", width=30,
+                                 command=self.next_month)
+        next_month.pack(side="right", padx=5)
+        
+        # Days Header
+        days_frame = ctk.CTkFrame(self.top)
+        days_frame.pack(pady=5, padx=5)
+        
+        # Thai day names
+        days = ["อา", "จ", "อ", "พ", "พฤ", "ศ", "ส"]
+        for i, day in enumerate(days):
+            ctk.CTkLabel(days_frame, text=day, width=30).grid(row=0, column=i, padx=1, pady=1)
+        
+        # Create calendar
+        self.cal_frame = ctk.CTkFrame(self.top)
+        self.cal_frame.pack(pady=5, padx=5)
+        
+        self.update_calendar()
+        
+        # Quick buttons frame
+        quick_frame = ctk.CTkFrame(self.top)
+        quick_frame.pack(pady=5, padx=5, fill="x")
+        
+        # Today button
+        today_btn = ctk.CTkButton(quick_frame, text="วันนี้", 
+                                command=lambda: self.set_date(datetime.now()))
+        today_btn.pack(side="left", padx=5, expand=True)
+        
+        # +7 days button
+        week_btn = ctk.CTkButton(quick_frame, text="7 วัน", 
+                               command=lambda: self.set_date(datetime.now() + timedelta(days=7)))
+        week_btn.pack(side="left", padx=5, expand=True)
+        
+        # +14 days button
+        two_week_btn = ctk.CTkButton(quick_frame, text="14 วัน",
+                                   command=lambda: self.set_date(datetime.now() + timedelta(days=14)))
+        two_week_btn.pack(side="left", padx=5, expand=True)
+        
+        # Center the window
+        self.top.update_idletasks()
+        width = self.top.winfo_width()
+        height = self.top.winfo_height()
+        x = (self.top.winfo_screenwidth() // 2) - (width // 2)
+        y = (self.top.winfo_screenheight() // 2) - (height // 2)
+        self.top.geometry(f'+{x}+{y}')
+        
+    def update_calendar(self):
+        # Clear existing calendar
+        for widget in self.cal_frame.winfo_children():
+            widget.destroy()
+            
+        # Get first day of month and number of days
+        first_day = datetime(self.year, self.month, 1)
+        last_day = (first_day + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+        num_days = last_day.day
+        
+        # Update month label
+        self.month_label.configure(text=f"{self.thai_months[self.month-1]} {self.year}")
+        
+        # Calculate starting position
+        start_pos = first_day.weekday()
+        start_pos = (start_pos + 1) % 7  # Adjust for Sunday start
+        
+        # Create calendar buttons
+        day = 1
+        for i in range(6):  # 6 rows max
+            for j in range(7):  # 7 days per week
+                if (i == 0 and j < start_pos) or (day > num_days):
+                    # Empty cell
+                    ctk.CTkLabel(self.cal_frame, text="", width=30).grid(row=i+1, column=j, padx=1, pady=1)
+                else:
+                    # Date button
+                    date = datetime(self.year, self.month, day)
+                    btn = ctk.CTkButton(self.cal_frame, text=str(day), width=30,
+                                     command=lambda d=date: self.set_date(d))
+                    
+                    # Highlight today
+                    if date.date() == datetime.now().date():
+                        btn.configure(fg_color="green")
+                    
+                    btn.grid(row=i+1, column=j, padx=1, pady=1)
+                    day += 1
+                    
+    def prev_month(self):
+        self.month -= 1
+        if self.month < 1:
+            self.month = 12
+            self.year -= 1
+        self.update_calendar()
+        
+    def next_month(self):
+        self.month += 1
+        if self.month > 12:
+            self.month = 1
+            self.year += 1
+        self.update_calendar()
+        
+    def set_date(self, date):
+        self.entry_widget.delete(0, 'end')
+        self.entry_widget.insert(0, date.strftime("%Y-%m-%d"))
+        if self.top:
+            self.top.destroy()
+
+    def show_borrow(self):
+        # ... existing code ...
+
+        # Due date frame
+        self.due_date_frame = ctk.CTkFrame(self.book_info_frame)
+        self.due_date_frame.pack(pady=10, fill="x")
+
+        # Due date label
+        due_date_label = ctk.CTkLabel(self.due_date_frame, text="กำหนดคืน:", font=("Helvetica", 14))
+        due_date_label.pack(side="left", padx=5)
+
+        # Default due date (7 days from now)
+        default_due_date = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+        self.due_date_entry = ctk.CTkEntry(self.due_date_frame, width=120)
+        self.due_date_entry.pack(side="left", padx=5)
+        self.due_date_entry.insert(0, default_due_date)
+
+        # Calendar button
+        calendar_button = ctk.CTkButton(self.due_date_frame, 
+                                      text="📅", 
+                                      width=40,
+                                      command=lambda: DatePicker(self.app, self.due_date_entry).show())
+        calendar_button.pack(side="left", padx=5)
+
+        # Quick buttons frame
+        quick_buttons_frame = ctk.CTkFrame(self.due_date_frame)
+        quick_buttons_frame.pack(side="left", padx=5)
+
+        # Quick selection buttons
+        ctk.CTkButton(quick_buttons_frame, 
+                     text="7 วัน",
+                     width=60,
+                     command=lambda: self.set_quick_date(7)).pack(side="left", padx=2)
+        
+        ctk.CTkButton(quick_buttons_frame,
+                     text="14 วัน",
+                     width=60,
+                     command=lambda: self.set_quick_date(14)).pack(side="left", padx=2)
+
+        # ... rest of existing code ...
+
+    def set_quick_date(self, days):
+        future_date = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+        self.due_date_entry.delete(0, 'end')
+        self.due_date_entry.insert(0, future_date)
 
 if __name__ == "__main__":
     app = LibraryApp()
