@@ -1771,8 +1771,7 @@ class LibraryApp:
         members = [
             "เด็กหญิง ขวัญชนก อุ่นศิริ เลขที่ 4",
             "เด็กชาย ณัฐชนน รอดน้อย เลขที่ 30",
-            "เด็กชาย ปริญญา บุญเทียน เลขที่ 38",
-            "เด็กชาย เอกวิญญ์ ลี้ไพบูลย์ เลขที่ 45"
+            "เด็กชาย ปริญญา บุญเทียน เลขที่ 38"
         ]
         member_text = "\n".join(members)
         member_label = ctk.CTkLabel(about_frame, text="สมาชิกผู้พัฒนา:\n" + member_text, font=("Sarabun", 16), justify="left")
@@ -2523,4 +2522,5 @@ class DatePicker:
 
 if __name__ == "__main__":
     app = LibraryApp()
+
     app.run() 
