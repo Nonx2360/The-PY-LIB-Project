@@ -264,13 +264,38 @@ def create_app():
         records = _rows_to_dicts(rows, ["name", "grade", "code", "title", "borrow_date", "return_due", "returned"])
         return render_template("history.html", records=records)
 
-    # ── Access History ────────────────────────────────────
+    # ── Access History + Recording ──────────────────────────
     @app.route("/access")
     @login_required
     def access():
         rows = access_repo.get_recent_access(limit=100)
         records = _rows_to_dicts(rows, ["access_time", "name", "grade", "action"])
-        return render_template("access.html", records=records)
+        members = member_repo.fetchall("SELECT id, name, grade, number FROM members ORDER BY name")
+        members = _rows_to_dicts(members, ["id", "name", "grade", "number"])
+        return render_template("access.html", records=records, members=members)
+
+    @app.route("/access/record", methods=["POST"])
+    @login_required
+    def access_record():
+        member_id = request.form.get("member_id")
+        if not member_id:
+            flash("กรุณาเลือกสมาชิก", "error")
+            return redirect(url_for("access"))
+        member_id = int(member_id)
+        last = access_repo.fetchone(
+            "SELECT action FROM access_log WHERE member_id=? ORDER BY id DESC LIMIT 1",
+            (member_id,))
+        if last and last[0] == "เข้า":
+            action = "ออก"
+        else:
+            action = "เข้า"
+        access_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        access_repo.log_access(member_id, access_time, action)
+        member = member_repo.fetchone("SELECT name FROM members WHERE id=?", (member_id,))
+        name = member[0] if member else "unknown"
+        logger.info(f"Web: access recorded: {name} -> {action}")
+        flash(f"บันทึก{action}สำเร็จ — {name}", "success")
+        return redirect(url_for("access"))
 
     # ── Settings ──────────────────────────────────────────
     @app.route("/settings", methods=["GET", "POST"])
