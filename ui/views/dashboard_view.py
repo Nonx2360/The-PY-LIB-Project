@@ -47,8 +47,11 @@ class DashboardView(ctk.CTkFrame):
         self.winfo_toplevel().bind("<Configure>", self._on_resize)
 
     def _on_resize(self, event):
-        w = event.width
-        size = 16 if w < 800 else (20 if w < 1200 else 24)
-        for child in self._btn_frame.winfo_children():
-            if isinstance(child, ctk.CTkButton):
-                child.configure(font=("Sarabun", size, "bold"))
+        try:
+            w = event.width
+            size = 16 if w < 800 else (20 if w < 1200 else 24)
+            for child in self._btn_frame.winfo_children():
+                if isinstance(child, ctk.CTkButton):
+                    child.configure(font=("Sarabun", size, "bold"))
+        except Exception:
+            pass

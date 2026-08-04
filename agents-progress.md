@@ -1,60 +1,55 @@
 # Project Refactoring & Handoff Progress Tracking
 
-> **Status:** Initiated (Phase 0 Complete)  
-> **Target codebase:** [main.py](file:///C:/Users/Nonx2/Documents/The-PY-LIB-Project/main.py) (2,500+ lines, CustomTkinter SQLite app)
+> **Status:** Phase 1-4 Complete, Phase 5 Complete (verified)  
+> **Target codebase:** original `main.py` (2,500+ lines, CustomTkinter SQLite app) → now modular; preserved as `legacy_main.py`
 
 ---
 
-## 🛠️ Completed Actions (Phase 0)
-- [x] **Debug Mode Script Argument:** Added a dynamically injected debug wrapper to `main.py`. Running `python main.py --debug`:
-  - Registers custom exception hooks (`sys.excepthook` & `threading.excepthook`) to capture crashes in both the GUI thread and camera/scan threads.
-  - Dynamically inspects and wraps all methods of `LibraryApp` to log entry, exit, duration, and arguments.
-  - Streams logs to standard output and logs to `debug.log`.
-- [x] **Venv Verification:** Advised developer to execute all runs and packaging commands from a Python Virtual Environment (`venv`) to keep packaging sizes minimal and avoid global library conflicts.
+## 🛠️ Completed Actions
 
----
-
-## 📋 Refactoring Plan & To-Do List (For Next Agent)
-
-Follow this sequence phase-by-phase. Tick off completed items as you proceed.
+### Phase 0 — Baseline
+- [x] **Debug Mode:** `python main.py --debug` wrapper with exception hooks + method tracing (kept in `legacy_main.py`; the new entry point uses structured logging).
+- [x] **Venv:** `venv/` created and used for all runs/installs/tests.
 
 ### 🔐 Phase 1: Security Implementation
-- [x] **Bcrypt Admin Hashing:**
-  - Automatically migrates existing plain-text admin database table rows to Bcrypt on application boot.
-  - Login checks verify credentials dynamically using `bcrypt.checkpw`.
-- [x] **AES-256-CBC QR Cryptography:**
-  - Created `core/security.py` using cryptography library.
-  - Derived a secure 256-bit key from passphrase and salt configurations via PBKDF2.
-  - Encrypts generated member QR code details and decodes with legacy standard base64 fallback.
-- [x] **Environment & Config Configuration:**
-  - Added `.env` and `.env.example` templates to manage secret variables.
-- [ ] **Login Rate-Limiter:**
-  - Lockout users/IPs temporarily after $N$ consecutive failed login attempts.
+- [x] **Bcrypt Admin Hashing:** `core/security.py` (hash_password/verify_password); plain-text rows auto-migrated to bcrypt; default admin seeded on first boot (`db/schema.py:seed_admin`).
+- [x] **AES-256-CBC QR Cryptography:** `core/security.py` PBKDF2-derived key, IV-prepended ciphertext; `decrypt_qr_data` keeps legacy base64 fallback.
+- [x] **Environment & Config:** `.env` / `.env.example` (SECRET_PASSPHRASE, SECRET_SALT) loaded via python-dotenv.
+- [ ] **Login Rate-Limiter:** lockout after N failed attempts — still NOT implemented (design decision pending).
 
 ### 💾 Phase 2: Data Repositories Layer
-- [ ] **DB Schema Definition:**
-  - Extract database creation routines to [db/schema.py](file:///C:/Users/Nonx2/Documents/The-PY-LIB-Project/db/schema.py).
-- [ ] **Repository Classes:**
-  - Build discrete classes: `MemberRepository`, `BookRepository`, `BorrowRepository`, and `AccessRepository` to contain all queries.
-- [ ] **Thread-Safe Connections:**
-  - Resolve potential SQLite SQLite-busy/race conditions during simultaneous scan-thread and UI-thread operations using safe thread-local connections or mutex locks.
+- [x] **DB Schema:** `db/schema.py` — all CREATE TABLEs + `seed_admin()` (bcrypt default admin + legacy migration).
+- [x] **Repository Classes:** `db/repositories/{base,member,book,borrow,access}_repo.py` — parameterized queries only.
+- [x] **Thread-Safe Connections:** `BaseRepository` opens a fresh `check_same_thread=False` connection per query under a shared `threading.Lock`.
 
 ### ⚙️ Phase 3: Services Layer
-- [ ] **QR Service (`services/qr_service.py`):**
-  - Consolidate encryption/decryption and generation logic.
-- [ ] **PDF Service (`services/pdf_service.py`):**
-  - Relocate PDF generator commands (ReportLab canvas generation) from the UI layer.
-- [ ] **Camera Service (`services/camera_service.py`):**
-  - Isolate OpenCV camera routines and worker loops. Provide frame updates and barcode payloads via a queue/callbacks.
+- [x] **QR Service:** `services/qr_service.py` (generate_qr encrypts with AES, decode_qr).
+- [x] **PDF Service:** `services/pdf_service.py` (member cards + borrow/access history reports).
+- [x] **Camera Service:** `services/camera_service.py` (frame processing + QR decode loop; UI subscribes via queue).
+- [x] **Excel Service:** `services/excel_service.py` (import books from Excel).
 
 ### 🎨 Phase 4: UI View Layer Separation
-- [ ] **View Separation:**
-  - Transition individual screens into distinct modules under `ui/views/` (e.g. `login_view.py`, `dashboard_view.py`, etc.).
-- [ ] **Application Shell (`app.py`):**
-  - Implement a central frame navigation manager inside `app.py` to toggle visible frames cleanly, eliminating `winfo_children()` resets.
+- [x] **Views:** `ui/views/` — login, dashboard, member, book, borrow, return, history, access (scanner + history), settings. Each receives `parent` + `nav` (simple DI), packs itself.
+- [x] **App Shell:** `app.py` — `LibraryApp(ctk.CTk)` navigation controller: login → sidebar + content area, `_show_view()` swap (no more `winfo_children()` rebuilds), `show_*` methods for every screen.
+- [x] **Entry Point:** `main.py` is now thin (init_db → LibraryApp().run()); monolith preserved as `legacy_main.py` for rollback.
+- [x] **Dependencies:** `requirements.txt` updated with reportlab/pandas/numpy/dotenv; numpy pinned <2 (opencv 4.8 incompat). Installed and verified in `venv/`.
 
 ### 📊 Phase 5: Tests and Logging
-- [ ] **Formal Logger Configuration:**
-  - Replace printouts with structured logging configs.
-- [ ] **Unit Tests:**
-  - Develop tests using python's `unittest` or `pytest` to target repositories and security services.
+- [x] **Logger:** `core/logger.py` (console + file, DEBUG flag via `setup_logger`), replaces prints.
+- [x] **Unit Tests:** `tests/test_security.py`, `test_member_repo.py`, `test_book_repo.py` — 14 tests, all pass with `venv/Scripts/python -m unittest discover -s tests` (temp-DB isolation).
+- [x] **GUI smoke test:** boot → login → all 9 navigation views verified.
+
+---
+
+## 📋 Remaining Work
+
+- [ ] **Login Rate-Limiter** (Phase 1, unfinished): lockout after N failed attempts.
+- [ ] **View refresh patterns:** some views build once in `__init__`; verify data refresh on re-entry to match old behavior.
+- [ ] **Cancel stale `after()` callbacks** on view destroy (currently benign warnings).
+- [ ] **Commit per phase** (nothing committed yet — repo currently has the old single commit).
+
+## ⚠️ Notes for next agent
+- Run everything from `venv/`: `& venv/Scripts/python.exe main.py`
+- Existing data in `db/library.db` is preserved (schema is CREATE-IF-NOT-EXISTS + seed-only-when-empty).
+- Legacy monolith lives in `legacy_main.py` — do not delete until the modular app has been user-accepted.
+- `.env` is gitignored; keep `.env.example` as the template.
