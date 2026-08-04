@@ -60,10 +60,9 @@ class DashboardView(ctk.CTkFrame):
             ("ตั้งค่า", "ธีมการแสดงผลและข้อมูลระบบ", theme.WARNING, self.nav.show_settings),
         ]
         grid = ctk.CTkFrame(page, fg_color="transparent")
-        grid.pack(fill="both", expand=True)
+        grid.pack(fill="x")
         for i in range(4):
             grid.grid_columnconfigure(i, weight=1)
-            grid.grid_rowconfigure(i // 4, weight=1)
 
         for i, (title, desc, color, cmd) in enumerate(tiles):
             row, col = divmod(i, 4)
