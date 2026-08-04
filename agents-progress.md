@@ -1,7 +1,21 @@
 # Project Refactoring & Handoff Progress Tracking
 
-> **Status:** Phase 1-4 Complete, Phase 5 Complete (verified)  
+> **Status:** Phase 1-5 Complete + UI/UX Redesign Complete (verified)  
 > **Target codebase:** original `main.py` (2,500+ lines, CustomTkinter SQLite app) → now modular; preserved as `legacy_main.py`
+
+---
+
+## 🎨 UI/UX Redesign (2026-08-04)
+- [x] **Design system** `ui/theme.py`: palette tokens, theme-aware colors (light/dark), bundled Sarabun font registration (FR_PRIVATE), reusable card/button/badge/entry builders.
+- [x] **App shell** `app.py`: grouped sidebar (จัดการ/ยืม-คืน/ห้องสมุด/ระบบ) with active-state highlight, header bar with page title + logout button, logout → login flow.
+- [x] **Login:** split-panel (navy brand panel + centered form card).
+- [x] **Dashboard:** 4 live stat cards (members/books/borrowing/overdue) + 8 action tiles.
+- [x] **Members/Books:** two-column layout — add form left, searchable list right, status/expiry badges, colored rows.
+- [x] **Borrow/Return:** 3-step flow cards (scan member → book code → confirm), quick due-date buttons (7/14/21), overdue badges.
+- [x] **History/Access:** searchable table-style rows with status badges (คืนแล้ว/ค้างส่ง/เข้า/ออก), PDF export.
+- [x] **Settings:** theme switcher + about card.
+- [x] **Widgets:** floating toast `ui/widgets/toast.py` (replaces packed labels), shared camera scan window `ui/widgets/scan_window.py` (deduplicated ~50 lines x3 views), restyled modal confirm dialog.
+- [x] **Verified:** login → all 9 pages nav cycle, logout, theme switch, add-member (QR+PDF) — no errors; 14/14 unit tests pass. Screenshots in `ui_preview/`.
 
 ---
 

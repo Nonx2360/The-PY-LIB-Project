@@ -1,20 +1,19 @@
 # ui/views/borrow_view.py
-import threading, time
 import customtkinter as ctk
-from PIL import Image
 from datetime import datetime, timedelta
-from queue import Queue
 
-from db.repositories.member_repo import MemberRepository
+import ui.theme as theme
 from db.repositories.book_repo import BookRepository
 from db.repositories.borrow_repo import BorrowRepository
-from services.camera_service import CameraService
+from db.repositories.member_repo import MemberRepository
+from ui.widgets.scan_window import ScanWindow
+from ui.widgets.toast import show_toast
 from core.logger import logger
 
 
 class BorrowView(ctk.CTkFrame):
     def __init__(self, parent, nav):
-        super().__init__(parent)
+        super().__init__(parent, fg_color="transparent")
         self.nav = nav
         self.member_repo = MemberRepository()
         self.book_repo = BookRepository()
@@ -23,211 +22,200 @@ class BorrowView(ctk.CTkFrame):
         self.current_book = None
         self._build()
 
-    def _show_toast(self, msg, color="green"):
-        lbl = ctk.CTkLabel(self.winfo_toplevel(), text=msg, text_color=color)
-        lbl.pack(pady=5)
-        self.after(2500, lbl.destroy)
-
     def _build(self):
-        self.pack(pady=20, padx=40, fill="both", expand=True)
-        ctk.CTkLabel(self, text="ยืมหนังสือ", font=("Helvetica", 24)).pack(pady=20)
+        self.pack(fill="both", expand=True)
+        page = ctk.CTkFrame(self, fg_color="transparent")
+        page.pack(fill="both", expand=True, padx=28, pady=24)
 
-        # Member section
-        member_frame = ctk.CTkFrame(self)
-        member_frame.pack(pady=10, padx=20, fill="x")
+        theme.heading(page, "ยืมหนังสือ", size=26).pack(anchor="w")
+        theme.subheading(page, "สแกนบัตรสมาชิก แล้วค้นหาหนังสือที่ต้องการยืม").pack(
+            anchor="w", pady=(2, 18))
 
-        self.status_label = ctk.CTkLabel(member_frame, text="กรุณาสแกนบัตรสมาชิก",
-                                         font=("Helvetica", 18))
-        self.status_label.pack(pady=10)
+        # ============ step 1: member ============
+        step1 = theme.card(page)
+        step1.pack(fill="x", pady=(0, 12))
+        head = ctk.CTkFrame(step1, fg_color="transparent")
+        head.pack(fill="x", padx=18, pady=(14, 8))
+        ctk.CTkLabel(head, text="ขั้นตอนที่ 1", font=theme.font(12, bold=True),
+                     text_color=theme.PRIMARY).pack(side="left")
+        ctk.CTkLabel(head, text="สแกนบัตรสมาชิก", font=theme.font(16, bold=True),
+                     text_color=theme.text_color()).pack(side="left", padx=(8, 0))
 
-        self.member_info_label = ctk.CTkLabel(member_frame, text="", font=("Helvetica", 14))
-        self.member_info_label.pack(pady=5)
+        body1 = ctk.CTkFrame(step1, fg_color="transparent")
+        body1.pack(fill="x", padx=18, pady=(0, 14))
+        body1.grid_columnconfigure(0, weight=1)
 
-        ctk.CTkButton(member_frame, text="สแกนบัตร",
-                      command=self._open_scan_window,
-                      height=60, font=("Helvetica", 20)).pack(pady=20)
+        self.status_label = ctk.CTkLabel(body1, text="ยังไม่ได้สแกนบัตร",
+                                         font=theme.font(14),
+                                         text_color=theme.muted_color(), anchor="w")
+        self.status_label.grid(row=0, column=0, sticky="w")
 
-        # Book section
-        book_frame = ctk.CTkFrame(self)
-        book_frame.pack(pady=10, padx=20, fill="x")
+        self.member_info_label = ctk.CTkLabel(body1, text="", font=theme.font(14, bold=True),
+                                              text_color=theme.SUCCESS, anchor="w")
+        self.member_info_label.grid(row=1, column=0, sticky="w", pady=(4, 0))
 
-        self.book_code_entry = ctk.CTkEntry(book_frame, placeholder_text="กรอกรหัสหนังสือ")
-        self.book_code_entry.pack(side="left", padx=5, fill="x", expand=True)
-        ctk.CTkButton(book_frame, text="ค้นหา", command=self._search_book,
-                      width=100).pack(side="right", padx=5)
+        theme.primary_button(body1, "สแกนบัตรสมาชิก", self._open_scan_window, height=42,
+                             width=220).grid(row=0, column=1, rowspan=2, padx=(16, 0))
 
-        # Book info + due date
-        self.book_info_frame = ctk.CTkFrame(self)
-        self.book_info_frame.pack(pady=10, padx=20, fill="x")
+        # ============ step 2: book ============
+        step2 = theme.card(page)
+        step2.pack(fill="x", pady=(0, 12))
+        head2 = ctk.CTkFrame(step2, fg_color="transparent")
+        head2.pack(fill="x", padx=18, pady=(14, 8))
+        ctk.CTkLabel(head2, text="ขั้นตอนที่ 2", font=theme.font(12, bold=True),
+                     text_color=theme.INFO).pack(side="left")
+        ctk.CTkLabel(head2, text="กรอกรหัสหนังสือ", font=theme.font(16, bold=True),
+                     text_color=theme.text_color()).pack(side="left", padx=(8, 0))
 
-        self.book_info_label = ctk.CTkLabel(self.book_info_frame, text="", font=("Helvetica", 14))
-        self.book_info_label.pack(pady=10)
-
-        # Due date row
-        due_row = ctk.CTkFrame(self.book_info_frame)
-        due_row.pack(pady=5, fill="x")
-        ctk.CTkLabel(due_row, text="กำหนดคืน:", font=("Helvetica", 14)).pack(side="left", padx=5)
-
-        default_due = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
-        self.due_date_entry = ctk.CTkEntry(due_row, width=120)
-        self.due_date_entry.insert(0, default_due)
-        self.due_date_entry.pack(side="left", padx=5)
-
-        quick_frame = ctk.CTkFrame(due_row)
-        quick_frame.pack(side="left", padx=5)
-        ctk.CTkButton(quick_frame, text="7 วัน", width=60,
-                      command=lambda: self._set_quick_date(7)).pack(side="left", padx=2)
-        ctk.CTkButton(quick_frame, text="14 วัน", width=60,
-                      command=lambda: self._set_quick_date(14)).pack(side="left", padx=2)
-        ctk.CTkLabel(due_row, text="(YYYY-MM-DD)", font=("Helvetica", 12),
-                     text_color="gray").pack(side="left", padx=5)
-
-        self.borrow_button = ctk.CTkButton(self.book_info_frame, text="ยืมหนังสือ",
-                                           command=self._process_borrow,
-                                           font=("Helvetica", 16))
-        # Initially hidden; shown after book search
-
-        ctk.CTkButton(self, text="กลับ", command=self.nav.show_dashboard).pack(pady=10)
+        body2 = ctk.CTkFrame(step2, fg_color="transparent")
+        body2.pack(fill="x", padx=18, pady=(0, 14))
+        body2.grid_columnconfigure(0, weight=1)
+        self.book_code_entry = theme.entry(body2, placeholder_text="เช่น B-001")
+        self.book_code_entry.grid(row=0, column=0, sticky="ew")
+        theme.primary_button(body2, "ค้นหา", self._search_book, width=110,
+                             height=38, font=theme.font(14, bold=True)).grid(
+            row=0, column=1, padx=(10, 0))
         self.book_code_entry.bind("<Return>", lambda e: self._search_book())
 
+        # ============ step 3: confirm ============
+        step3 = theme.card(page)
+        step3.pack(fill="x")
+        head3 = ctk.CTkFrame(step3, fg_color="transparent")
+        head3.pack(fill="x", padx=18, pady=(14, 8))
+        ctk.CTkLabel(head3, text="ขั้นตอนที่ 3", font=theme.font(12, bold=True),
+                     text_color=theme.SUCCESS).pack(side="left")
+        ctk.CTkLabel(head3, text="ยืนยันการยืม", font=theme.font(16, bold=True),
+                     text_color=theme.text_color()).pack(side="left", padx=(8, 0))
+
+        body3 = ctk.CTkFrame(step3, fg_color="transparent")
+        body3.pack(fill="x", padx=18, pady=(0, 16))
+        body3.grid_columnconfigure(0, weight=1)
+
+        self.book_info_label = ctk.CTkLabel(body3, text="—", font=theme.font(14),
+                                            text_color=theme.muted_color(), anchor="w")
+        self.book_info_label.grid(row=0, column=0, sticky="w", pady=(0, 10))
+
+        due_row = ctk.CTkFrame(body3, fg_color="transparent")
+        due_row.grid(row=1, column=0, sticky="w")
+        ctk.CTkLabel(due_row, text="กำหนดคืน:", font=theme.font(14, bold=True),
+                     text_color=theme.text_color()).pack(side="left", padx=(0, 8))
+        default_due = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+        self.due_date_entry = theme.entry(due_row, width=120)
+        self.due_date_entry.insert(0, default_due)
+        self.due_date_entry.pack(side="left")
+
+        quick_frame = ctk.CTkFrame(due_row, fg_color="transparent")
+        quick_frame.pack(side="left", padx=10)
+        for days in (7, 14, 21):
+            theme.secondary_button(quick_frame, f"{days} วัน",
+                                   lambda d=days: self._set_quick_date(d),
+                                   width=64, height=30).pack(side="left", padx=3)
+
+        self.borrow_button = theme.success_button(body3, "ยืมหนังสือ", self._process_borrow,
+                                                  height=44, width=220)
+        self.borrow_button.grid(row=2, column=0, sticky="w", pady=(14, 0))
+
+    # ================= helpers =================
     def _set_quick_date(self, days):
         self.due_date_entry.delete(0, "end")
-        self.due_date_entry.insert(0, (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d"))
+        self.due_date_entry.insert(0,
+            (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d"))
 
     def _open_scan_window(self):
-        scan_win = ctk.CTkToplevel(self)
-        scan_win.title("สแกน QR Code")
-        scan_win.geometry("800x600")
+        ScanWindow(self, self._handle_member_qr,
+                   on_error=lambda msg: show_toast(self, msg, "red"))
 
-        video_frame = ctk.CTkFrame(scan_win)
-        video_frame.pack(pady=10, padx=10, fill="both", expand=True)
-        video_label = ctk.CTkLabel(video_frame, text="")
-        video_label.pack(fill="both", expand=True)
-
-        ctk.CTkLabel(scan_win, text="นำ QR Code มาวางตรงกล้อง\nรอสักครู่ระบบจะสแกนอัตโนมัติ",
-                     font=("Helvetica", 16)).pack(pady=10)
-        status_label = ctk.CTkLabel(scan_win, text="กำลังรอสแกน...",
-                                    font=("Helvetica", 14), text_color="yellow")
-        status_label.pack(pady=5)
-
-        cap = CameraService.get_camera()
-        if cap is None:
-            self._show_toast("ไม่สามารถเปิดกล้องได้", "red")
-            scan_win.destroy()
-            return
-
-        qr_queue = Queue()
-
-        def scan_loop():
-            while True:
-                if not scan_win.winfo_exists():
-                    break
-                ret, frame = cap.read()
-                if not ret:
-                    break
-                processed, decoded = CameraService.process_frame(frame)
-                if decoded:
-                    qr_queue.put(decoded)
-                    scan_win.after(1000, lambda: [scan_win.destroy(), cap.release()])
-                    return
-                rgb = __import__("cv2").cvtColor(processed, __import__("cv2").COLOR_BGR2RGB)
-                pil = Image.fromarray(rgb)
-                ctk_img = ctk.CTkImage(light_image=pil, dark_image=pil, size=(640, 480))
-                video_label.configure(image=ctk_img)
-                time.sleep(0.033)
-            cap.release()
-
-        t = threading.Thread(target=scan_loop, daemon=True)
-        t.start()
-
-        def poll_qr():
-            if not qr_queue.empty():
-                decoded = qr_queue.get()
-                try:
-                    name, grade, number, *_ = decoded.split("|")
-                    row = self.member_repo.fetchone(
-                        "SELECT id FROM members WHERE name=? AND grade=? AND number=?",
-                        (name, grade, number))
-                    if row:
-                        self.current_member = {"id": row[0], "name": name,
-                                               "grade": grade, "number": number}
-                        self.status_label.configure(text="พบข้อมูลสมาชิก", text_color="green")
-                        self.member_info_label.configure(
-                            text=f"สมาชิก: {name}\nชั้น: {grade}\nเลขที่: {number}")
-                        self.book_code_entry.focus()
-                    else:
-                        self.status_label.configure(text="ไม่พบสมาชิกในระบบ", text_color="red")
-                except Exception as e:
-                    logger.error(f"QR decode error: {e}")
-                return
-            if scan_win.winfo_exists():
-                scan_win.after(100, poll_qr)
-
-        scan_win.after(100, poll_qr)
-        scan_win.protocol("WM_DELETE_WINDOW", lambda: [cap.release(), scan_win.destroy()])
+    def _handle_member_qr(self, decoded):
+        try:
+            name, grade, number, *_ = decoded.split("|")
+            row = self.member_repo.fetchone(
+                "SELECT id FROM members WHERE name=? AND grade=? AND number=?",
+                (name, grade, number))
+            if row:
+                self.current_member = {"id": row[0], "name": name,
+                                       "grade": grade, "number": number}
+                self.status_label.configure(text="พบข้อมูลสมาชิก ✓",
+                                            text_color=theme.SUCCESS)
+                self.member_info_label.configure(
+                    text=f"{name}  •  ชั้น {grade}  •  เลขที่ {number}")
+                self.book_code_entry.focus()
+                show_toast(self, f"ยินดีต้อนรับ {name}", "green")
+            else:
+                self.status_label.configure(text="ไม่พบสมาชิกในระบบ",
+                                            text_color=theme.DANGER)
+                self.member_info_label.configure(text="")
+                self.current_member = None
+                show_toast(self, "ไม่พบสมาชิกในระบบ", "red")
+        except Exception as e:
+            logger.error(f"QR decode error: {e}", exc_info=True)
+            show_toast(self, "QR Code ไม่ถูกต้อง", "red")
 
     def _search_book(self):
         if not self.current_member:
-            self._show_toast("กรุณาสแกนบัตรสมาชิกก่อน", "red")
+            show_toast(self, "กรุณาสแกนบัตรสมาชิกก่อน", "red")
             return
         code = self.book_code_entry.get().strip()
         if not code:
-            self._show_toast("กรุณากรอกรหัสหนังสือ", "red")
+            show_toast(self, "กรุณากรอกรหัสหนังสือ", "red")
             return
         book = self.book_repo.get_by_code(code)
         if not book:
-            self.book_info_label.configure(text="ไม่พบหนังสือในระบบ")
+            self.book_info_label.configure(text=f"ไม่พบหนังสือรหัส '{code}'")
             self.current_book = None
             self.borrow_button.pack_forget()
+            show_toast(self, "ไม่พบหนังสือในระบบ", "red")
             return
         if book[3] != "ว่าง":
-            self.book_info_label.configure(text=f"หนังสือไม่พร้อมให้ยืม สถานะ: {book[3]}")
+            self.book_info_label.configure(text=f"หนังสือ '{book[2]}' ไม่พร้อมให้ยืม (สถานะ: {book[3]})")
             self.current_book = None
             self.borrow_button.pack_forget()
+            show_toast(self, "หนังสือถูกยืมอยู่", "red")
             return
-        self.book_info_label.configure(text=f"รหัส: {book[1]}\nชื่อ: {book[2]}\nสถานะ: {book[3]}")
+        self.book_info_label.configure(
+            text=f"รหัส: {book[1]}    ชื่อ: {book[2]}    สถานะ: พร้อมให้ยืม")
+        self.book_info_label.configure(text_color=theme.text_color())
         self.current_book = book
-        self.borrow_button.pack(pady=10)
+        self.borrow_button.grid()
 
     def _process_borrow(self):
         if not self.current_member or not self.current_book:
-            self._show_toast("ข้อมูลไม่ครบถ้วน", "red")
+            show_toast(self, "ข้อมูลไม่ครบถ้วน", "red")
             return
         due_str = self.due_date_entry.get().strip()
         try:
             due_dt = datetime.strptime(due_str, "%Y-%m-%d")
             if due_dt.date() < datetime.now().date():
-                self._show_toast("กำหนดคืนต้องไม่เป็นวันที่ผ่านมาแล้ว", "red")
+                show_toast(self, "กำหนดคืนต้องไม่เป็นวันที่ผ่านมาแล้ว", "red")
                 return
         except ValueError:
-            self._show_toast("รูปแบบวันที่ไม่ถูกต้อง (YYYY-MM-DD)", "red")
+            show_toast(self, "รูปแบบวันที่ไม่ถูกต้อง (YYYY-MM-DD)", "red")
             return
 
         mid = self.current_member["id"]
-        # Overdue check
         overdue = self.borrow_repo.fetchone(
             "SELECT COUNT(*) FROM borrow_log WHERE member_id=? AND returned=0 AND return_due < date('now')",
             (mid,))[0]
         if overdue > 0:
-            self._show_toast("ไม่สามารถยืมได้ เนื่องจากมีหนังสือค้างส่ง", "red")
+            show_toast(self, "ไม่สามารถยืมได้ เนื่องจากมีหนังสือค้างส่ง", "red")
             return
-        # Limit check
         current = self.borrow_repo.fetchone(
             "SELECT COUNT(*) FROM borrow_log WHERE member_id=? AND returned=0", (mid,))[0]
         if current >= 3:
-            self._show_toast("ยืมครบจำนวนที่กำหนดแล้ว (3 เล่ม)", "red")
+            show_toast(self, "ยืมครบจำนวนที่กำหนดแล้ว (3 เล่ม)", "red")
             return
 
         borrow_date = datetime.now().strftime("%Y-%m-%d")
         try:
             self.borrow_repo.add(mid, self.current_book[0], borrow_date, due_str)
             self.book_repo.update_status(self.current_book[0], "ยืมแล้ว")
-            self._show_toast(
-                f"ยืมสำเร็จ: {self.current_book[2]}\nสมาชิก: {self.current_member['name']}\nคืน: {due_str}")
+            show_toast(
+                self, f"ยืมสำเร็จ: {self.current_book[2]}\n"
+                      f"สมาชิก: {self.current_member['name']}   คืนภายใน: {due_str}",
+                "green")
             self.book_code_entry.delete(0, "end")
-            self.book_info_label.configure(text="")
+            self.book_info_label.configure(text="—")
             self.current_book = None
-            self.borrow_button.pack_forget()
+            self.borrow_button.grid_forget()
         except Exception as e:
             logger.error(f"process_borrow error: {e}", exc_info=True)
-            self._show_toast(f"เกิดข้อผิดพลาด: {e}", "red")
+            show_toast(self, f"เกิดข้อผิดพลาด: {e}", "red")
