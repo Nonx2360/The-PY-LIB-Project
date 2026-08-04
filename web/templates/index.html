@@ -4,37 +4,41 @@
 {% block content %}
 <div class="stats-grid">
     <div class="stat-card stat-members">
+        <div class="stat-icon"><svg width="32" height="32"><use href="#icon-users"/></svg></div>
         <div class="stat-number">{{ members }}</div>
         <div class="stat-label">สมาชิกทั้งหมด</div>
     </div>
     <div class="stat-card stat-books">
+        <div class="stat-icon"><svg width="32" height="32"><use href="#icon-book-open"/></svg></div>
         <div class="stat-number">{{ books }}</div>
         <div class="stat-label">หนังสือทั้งหมด</div>
     </div>
     <div class="stat-card stat-borrowed">
+        <div class="stat-icon"><svg width="32" height="32"><use href="#icon-send"/></svg></div>
         <div class="stat-number">{{ borrowed }}</div>
         <div class="stat-label">กำลังยืม</div>
     </div>
     <div class="stat-card stat-overdue">
+        <div class="stat-icon"><svg width="32" height="32"><use href="#icon-alert-triangle"/></svg></div>
         <div class="stat-number">{{ overdue }}</div>
         <div class="stat-label">ค้างส่ง</div>
     </div>
 </div>
 <div class="actions-grid">
     <a href="{{ url_for('members') }}" class="action-card">
-        <div class="action-icon">👥</div>
+        <div class="action-icon"><svg width="36" height="36"><use href="#icon-users"/></svg></div>
         <div class="action-text">จัดการสมาชิก</div>
     </a>
     <a href="{{ url_for('books') }}" class="action-card">
-        <div class="action-icon">📖</div>
+        <div class="action-icon"><svg width="36" height="36"><use href="#icon-book"/></svg></div>
         <div class="action-text">จัดการหนังสือ</div>
     </a>
     <a href="{{ url_for('borrow') }}" class="action-card">
-        <div class="action-icon">📤</div>
+        <div class="action-icon"><svg width="36" height="36"><use href="#icon-send"/></svg></div>
         <div class="action-text">ยืมหนังสือ</div>
     </a>
     <a href="{{ url_for('return_book') }}" class="action-card">
-        <div class="action-icon">📥</div>
+        <div class="action-icon"><svg width="36" height="36"><use href="#icon-download"/></svg></div>
         <div class="action-text">คืนหนังสือ</div>
     </a>
 </div>

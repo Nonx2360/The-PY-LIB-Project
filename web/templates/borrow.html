@@ -4,16 +4,22 @@
 {% block content %}
 <div class="card">
     <div class="card-header">
-        <h3>ยืมหนังสือ</h3>
+        <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-send"/></svg> ยืมหนังสือ</h3>
     </div>
     <div class="card-body">
+        {% if max_books_msg %}
+        <div class="alert alert-error">
+            <svg width="16" height="16" class="alert-icon"><use href="#icon-alert-triangle"/></svg>
+            {{ max_books_msg }}
+        </div>
+        {% endif %}
         <form method="POST" class="form-grid">
             <div class="form-group">
                 <label>เลือกสมาชิก</label>
-                <select name="member_id" required>
+                <select name="member_id" required id="memberSelect" onchange="updateBorrowInfo()">
                     <option value="">— เลือกสมาชิก —</option>
                     {% for m in members %}
-                    <option value="{{ m.id }}">{{ m.name }} ({{ m.grade }} / {{ m.number }})</option>
+                    <option value="{{ m.id }}" data-active="{{ m.active_borrows }}" data-overdue="{{ m.overdue_borrows }}">{{ m.name }} ({{ m.grade }} / {{ m.number }}) — ยืม {{ m.active_borrows }} เล่ม</option>
                     {% endfor %}
                 </select>
             </div>
@@ -28,12 +34,41 @@
             </div>
             <div class="form-group">
                 <label>กำหนดคืน</label>
-                <input type="date" name="due_date" value="{{ default_due }}" required>
+                <input type="date" name="due_date" value="{{ default_due }}" required id="dueDate">
+            </div>
+            <div class="form-group">
+                <label>กำหนดคืนด่วน</label>
+                <div class="quick-dates">
+                    {% for d in [7, 14, 21, 30] %}
+                    <button type="button" class="btn btn-secondary btn-sm" onclick="setDueDate({{ d }})">{{ d }} วัน</button>
+                    {% endfor %}
+                </div>
             </div>
             <div class="form-group form-actions">
-                <button type="submit" class="btn btn-success">ยืมหนังสือ</button>
+                <button type="submit" class="btn btn-success">
+                    <svg width="16" height="16" class="icon-inline"><use href="#icon-send"/></svg> ยืมหนังสือ
+                </button>
             </div>
         </form>
     </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+function setDueDate(days) {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    document.getElementById('dueDate').value = d.toISOString().split('T')[0];
+}
+function updateBorrowInfo() {
+    const sel = document.getElementById('memberSelect');
+    const opt = sel.options[sel.selectedIndex];
+    if (!opt || !opt.value) return;
+    const active = parseInt(opt.dataset.active || 0);
+    const overdue = parseInt(opt.dataset.overdue || 0);
+    if (overdue > 0) {
+        alert('สมาชิกคนนี้มีหนังสือค้างส่ง ' + overdue + ' เล่ม ไม่สามารถยืมได้');
+    }
+}
+</script>
 {% endblock %}

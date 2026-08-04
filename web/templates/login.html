@@ -8,12 +8,15 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body class="login-body">
+    {% include 'icons.svg' %}
     <div class="login-container">
         <div class="login-brand">
-            <div class="brand-icon-lg">📚</div>
+            <div class="brand-icon-lg">
+                <svg width="64" height="64"><use href="#icon-book-open"/></svg>
+            </div>
             <h1>THE PY-LIB</h1>
             <p>ระบบห้องสมุดอัจฉริยะ — เวอร์ชันเว็บ</p>
-            <p class="school-name">{{ config.get('school_name', 'DSNPRU') }}</p>
+            <p class="school-name">{{ settings.school_name if settings else 'DSNPRU' }}</p>
         </div>
         <div class="login-form-card">
             <h2>เข้าสู่ระบบ</h2>

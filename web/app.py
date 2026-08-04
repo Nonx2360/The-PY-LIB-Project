@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash
+from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash, send_file
 from config import settings
 from config.constants import DB_PATH
 from db.repositories.member_repo import MemberRepository
@@ -23,7 +23,6 @@ import sqlite3
 
 
 def _rows_to_dicts(rows, columns):
-    """Convert list of tuples to list of dicts."""
     return [dict(zip(columns, row)) for row in rows]
 
 
@@ -61,7 +60,7 @@ def create_app():
                 logger.info(f"Web login: {username}")
                 return redirect(url_for("dashboard"))
             flash("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง", "error")
-        return render_template("login.html")
+        return render_template("login.html", config=settings.all())
 
     @app.route("/logout")
     def logout():
@@ -72,12 +71,12 @@ def create_app():
     @app.route("/")
     @login_required
     def dashboard():
-        members = member_repo.fetchall("SELECT COUNT(*) as c FROM members")[0][0]
-        books = book_repo.fetchall("SELECT COUNT(*) as c FROM books")[0][0]
+        members = member_repo.fetchall("SELECT COUNT(*) FROM members")[0][0]
+        books = book_repo.fetchall("SELECT COUNT(*) FROM books")[0][0]
         borrowed = borrow_repo.fetchall(
-            "SELECT COUNT(*) as c FROM borrow_log WHERE returned=0")[0][0]
+            "SELECT COUNT(*) FROM borrow_log WHERE returned=0")[0][0]
         overdue = borrow_repo.fetchall(
-            "SELECT COUNT(*) as c FROM borrow_log WHERE returned=0 AND return_due < date('now')"
+            "SELECT COUNT(*) FROM borrow_log WHERE returned=0 AND return_due < date('now')"
         )[0][0]
         return render_template("index.html",
                                members=members, books=books,
@@ -119,6 +118,12 @@ def create_app():
     @app.route("/members/<int:mid>/delete", methods=["POST"])
     @login_required
     def member_delete(mid):
+        row = member_repo.fetchone("SELECT qrcode_path FROM members WHERE id=?", (mid,))
+        if row and row[0]:
+            try:
+                os.remove(row[0])
+            except OSError:
+                pass
         member_repo.delete(mid)
         logger.info(f"Web: member deleted: id={mid}")
         flash("ลบสมาชิกสำเร็จ", "success")
@@ -141,6 +146,10 @@ def create_app():
         if not code or not title:
             flash("กรุณากรอกข้อมูลให้ครบ", "error")
             return redirect(url_for("books"))
+        existing = book_repo.fetchone("SELECT id FROM books WHERE code=?", (code,))
+        if existing:
+            flash(f"รหัสหนังสือ '{code}' มีอยู่แล้ว", "error")
+            return redirect(url_for("books"))
         book_repo.add(code, title, status="ว่าง")
         logger.info(f"Web: book added: {code} {title}")
         flash("เพิ่มหนังสือสำเร็จ", "success")
@@ -149,6 +158,11 @@ def create_app():
     @app.route("/books/<int:bid>/delete", methods=["POST"])
     @login_required
     def book_delete(bid):
+        active = borrow_repo.fetchone(
+            "SELECT COUNT(*) FROM borrow_log WHERE book_id=? AND returned=0", (bid,))[0]
+        if active > 0:
+            flash("ไม่สามารถลบได้ — มีการยืมหนังสือเล่มนี้อยู่", "error")
+            return redirect(url_for("books"))
         book_repo.delete(bid)
         logger.info(f"Web: book deleted: id={bid}")
         flash("ลบหนังสือสำเร็จ", "success")
@@ -158,29 +172,50 @@ def create_app():
     @app.route("/borrow", methods=["GET", "POST"])
     @login_required
     def borrow():
+        max_books = settings.get("max_books_per_member")
         if request.method == "POST":
-            member_id = request.form.get("member_id")
+            member_id = int(request.form.get("member_id", 0))
             book_id = request.form.get("book_id")
             due = request.form.get("due_date", "")
             if not member_id or not book_id:
                 flash("กรุณาเลือกสมาชิกและหนังสือ", "error")
                 return redirect(url_for("borrow"))
+            overdue = borrow_repo.fetchone(
+                "SELECT COUNT(*) FROM borrow_log WHERE member_id=? AND returned=0 AND return_due < date('now')",
+                (member_id,))[0]
+            if overdue > 0:
+                flash("ไม่สามารถยืมได้ — มีหนังสือค้างส่ง", "error")
+                return redirect(url_for("borrow"))
+            current = borrow_repo.fetchone(
+                "SELECT COUNT(*) FROM borrow_log WHERE member_id=? AND returned=0", (member_id,))[0]
+            if current >= max_books:
+                flash(f"ยืมครบจำนวนที่กำหนดแล้ว ({max_books} เล่ม)", "error")
+                return redirect(url_for("borrow"))
             borrow_date = datetime.now().strftime("%Y-%m-%d")
-            borrow_repo.add(int(member_id), int(book_id), borrow_date, due)
+            borrow_repo.add(member_id, int(book_id), borrow_date, due)
             book_repo.update_status(int(book_id), "ยืมแล้ว")
             logger.info(f"Web: borrowed book {book_id} to member {member_id}")
             flash("ยืมหนังสือสำเร็จ", "success")
             return redirect(url_for("borrow"))
 
-        members = member_repo.fetchall(
+        raw_members = member_repo.fetchall(
             "SELECT id, name, grade, number FROM members ORDER BY name")
-        members = _rows_to_dicts(members, ["id", "name", "grade", "number"])
+        enriched = []
+        for m in raw_members:
+            mid = m[0]
+            active = borrow_repo.fetchone(
+                "SELECT COUNT(*) FROM borrow_log WHERE member_id=? AND returned=0", (mid,))[0]
+            overdue = borrow_repo.fetchone(
+                "SELECT COUNT(*) FROM borrow_log WHERE member_id=? AND returned=0 AND return_due < date('now')",
+                (mid,))[0]
+            enriched.append({"id": mid, "name": m[1], "grade": m[2], "number": m[3],
+                             "active_borrows": active, "overdue_borrows": overdue})
         books = book_repo.fetchall(
             "SELECT id, code, title FROM books WHERE status='ว่าง' ORDER BY title")
         books = _rows_to_dicts(books, ["id", "code", "title"])
         default_due = (datetime.now() + timedelta(days=settings.get("default_loan_days"))).strftime("%Y-%m-%d")
-        return render_template("borrow.html", members=members, books=books,
-                               default_due=default_due)
+        return render_template("borrow.html", members=enriched, books=books,
+                               default_due=default_due, max_books=max_books)
 
     # ── Return ────────────────────────────────────────────
     @app.route("/return", methods=["GET", "POST"])
@@ -205,6 +240,9 @@ def create_app():
                WHERE bl.returned=0
                ORDER BY bl.borrow_date DESC""")
         borrowed = _rows_to_dicts(borrowed, ["id", "name", "grade", "number", "book_id", "code", "title", "borrow_date", "return_due"])
+        today = datetime.now().strftime("%Y-%m-%d")
+        for b in borrowed:
+            b["overdue"] = b["return_due"] < today
         return render_template("return_book.html", borrowed=borrowed)
 
     # ── History ───────────────────────────────────────────
@@ -238,12 +276,13 @@ def create_app():
             settings.set("default_loan_days", int(request.form.get("default_loan_days", 7)))
             settings.set("max_books_per_member", int(request.form.get("max_books_per_member", 3)))
             settings.set("member_expiry_days", int(request.form.get("member_expiry_days", 365)))
+            settings.set("school_logo_path", request.form.get("school_logo_path", "").strip())
             settings.save()
             flash("บันทึกการตั้งค่าสำเร็จ", "success")
             return redirect(url_for("settings_page"))
         return render_template("settings.html", settings=settings.all())
 
-    # ── API endpoints (for AJAX/SPA features) ────────────
+    # ── API endpoints ─────────────────────────────────────
     @app.route("/api/stats")
     @login_required
     def api_stats():

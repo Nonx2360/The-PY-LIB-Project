@@ -8,44 +8,48 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
+    {% include 'icons.svg' %}
     <div class="layout">
         <nav class="sidebar">
             <div class="sidebar-brand">
-                <div class="brand-icon">📚</div>
+                {% set logo = config.get('school_logo_path', '') if config is defined else '' %}
+                {% if logo %}
+                <img src="{{ url_for('static', filename='../' + logo) }}" alt="Logo" class="brand-logo" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="brand-icon" style="display:none">
+                    <svg width="28" height="28"><use href="#icon-book-open"/></svg>
+                </div>
+                {% else %}
+                <div class="brand-icon">
+                    <svg width="28" height="28"><use href="#icon-book-open"/></svg>
+                </div>
+                {% endif %}
                 <div class="brand-text">
                     <div class="brand-name">THE PY-LIB</div>
                     <div class="brand-sub">ระบบห้องสมุด</div>
                 </div>
             </div>
             <div class="nav-links">
-                <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
-                    <span class="nav-icon">📊</span> แดชบอร์ด
+                {% set nav_items = [
+                    ('dashboard', 'icon-dashboard', 'แดชบอร์ด'),
+                    ('members', 'icon-users', 'สมาชิก'),
+                    ('books', 'icon-book', 'หนังสือ'),
+                    ('borrow', 'icon-send', 'ยืมหนังสือ'),
+                    ('return_book', 'icon-download', 'คืนหนังสือ'),
+                    ('history', 'icon-history', 'ประวัติยืม-คืน'),
+                    ('access', 'icon-door', 'เข้าออก'),
+                    ('settings_page', 'icon-settings', 'ตั้งค่า'),
+                ] %}
+                {% for endpoint, icon, label in nav_items %}
+                <a href="{{ url_for(endpoint) }}" class="nav-link {% if request.endpoint == endpoint %}active{% endif %}">
+                    <span class="nav-icon"><svg width="18" height="18"><use href="#{{ icon }}"/></svg></span>
+                    {{ label }}
                 </a>
-                <a href="{{ url_for('members') }}" class="nav-link {% if request.endpoint == 'members' %}active{% endif %}">
-                    <span class="nav-icon">👥</span> สมาชิก
-                </a>
-                <a href="{{ url_for('books') }}" class="nav-link {% if request.endpoint == 'books' %}active{% endif %}">
-                    <span class="nav-icon">📖</span> หนังสือ
-                </a>
-                <a href="{{ url_for('borrow') }}" class="nav-link {% if request.endpoint == 'borrow' %}active{% endif %}">
-                    <span class="nav-icon">📤</span> ยืมหนังสือ
-                </a>
-                <a href="{{ url_for('return_book') }}" class="nav-link {% if request.endpoint == 'return_book' %}active{% endif %}">
-                    <span class="nav-icon">📥</span> คืนหนังสือ
-                </a>
-                <a href="{{ url_for('history') }}" class="nav-link {% if request.endpoint == 'history' %}active{% endif %}">
-                    <span class="nav-icon">📋</span> ประวัติยืม-คืน
-                </a>
-                <a href="{{ url_for('access') }}" class="nav-link {% if request.endpoint == 'access' %}active{% endif %}">
-                    <span class="nav-icon">🚪</span> ประวัติเข้าออก
-                </a>
-                <a href="{{ url_for('settings_page') }}" class="nav-link {% if request.endpoint == 'settings_page' %}active{% endif %}">
-                    <span class="nav-icon">⚙️</span> ตั้งค่า
-                </a>
+                {% endfor %}
             </div>
             <div class="sidebar-footer">
                 <a href="{{ url_for('logout') }}" class="nav-link logout-link">
-                    <span class="nav-icon">🚪</span> ออกจากระบบ
+                    <span class="nav-icon"><svg width="18" height="18"><use href="#icon-logout"/></svg></span>
+                    ออกจากระบบ
                 </a>
             </div>
         </nav>
@@ -60,7 +64,14 @@
                 {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                 {% for category, message in messages %}
-                <div class="alert alert-{{ category }}">{{ message }}</div>
+                <div class="alert alert-{{ category }}">
+                    <svg width="16" height="16" class="alert-icon">
+                        {% if category == 'success' %}<use href="#icon-check-circle"/>
+                        {% elif category == 'error' %}<use href="#icon-x-circle"/>
+                        {% else %}<use href="#icon-alert-triangle"/>{% endif %}
+                    </svg>
+                    {{ message }}
+                </div>
                 {% endfor %}
                 {% endif %}
                 {% endwith %}
@@ -68,5 +79,6 @@
             </div>
         </main>
     </div>
+    {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -4,39 +4,68 @@
 {% block content %}
 <div class="card">
     <div class="card-header">
-        <h3>หนังสือที่กำลังยืมอยู่ ({{ borrowed|length }} เล่ม)</h3>
+        <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-download"/></svg> หนังสือที่กำลังยืมอยู่ ({{ borrowed|length }} เล่ม)</h3>
+        <div class="search-box">
+            <svg width="16" height="16" class="search-icon"><use href="#icon-search"/></svg>
+            <input type="text" id="searchReturn" placeholder="ค้นหา ชื่อ/รหัส/ชื่อหนังสือ..." oninput="filterReturn()">
+        </div>
     </div>
     <div class="card-body">
-        <table class="data-table">
+        <table class="data-table" id="returnTable">
             <thead>
                 <tr>
                     <th>#</th><th>สมาชิก</th><th>ชั้น</th><th>หนังสือ</th>
-                    <th>วันที่ยืม</th><th>กำหนดคืน</th><th>จัดการ</th>
+                    <th>วันที่ยืม</th><th>กำหนดคืน</th><th>สถานะ</th><th>จัดการ</th>
                 </tr>
             </thead>
             <tbody>
                 {% for b in borrowed %}
-                <tr>
+                <tr data-search="{{ b.name }} {{ b.grade }} {{ b.code }} {{ b.title }}">
                     <td>{{ b.id }}</td>
                     <td>{{ b.name }}</td>
                     <td>{{ b.grade }}</td>
-                    <td>{{ b.title }}</td>
+                    <td>{{ b.code }} — {{ b.title }}</td>
                     <td>{{ b.borrow_date }}</td>
                     <td>{{ b.return_due }}</td>
+                    <td>
+                        {% if b.overdue %}
+                        <span class="badge badge-danger">
+                            <svg width="12" height="12" class="icon-inline"><use href="#icon-alert-triangle"/></svg>
+                            ค้างส่ง
+                        </span>
+                        {% else %}
+                        <span class="badge badge-success">
+                            <svg width="12" height="12" class="icon-inline"><use href="#icon-clock"/></svg>
+                            ปกติ
+                        </span>
+                        {% endif %}
+                    </td>
                     <td>
                         <form method="POST" class="inline-form">
                             <input type="hidden" name="record_id" value="{{ b.id }}">
                             <input type="hidden" name="book_id" value="{{ b.book_id }}">
-                            <button type="submit" class="btn btn-primary btn-sm">คืน</button>
+                            <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('คืนหนังสือ {{ b.title }}?')">
+                                <svg width="14" height="14"><use href="#icon-download"/></svg> คืน
+                            </button>
                         </form>
                     </td>
                 </tr>
                 {% endfor %}
                 {% if not borrowed %}
-                <tr><td colspan="7" class="text-center text-muted">ไม่มีหนังสือที่ต้องคืน</td></tr>
+                <tr><td colspan="8" class="text-center text-muted">ไม่มีหนังสือที่ต้องคืน</td></tr>
                 {% endif %}
             </tbody>
         </table>
     </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+function filterReturn() {
+    const q = document.getElementById('searchReturn').value.toLowerCase();
+    document.querySelectorAll('#returnTable tbody tr').forEach(row => {
+        row.style.display = (row.dataset.search || '').toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+</script>
 {% endblock %}

@@ -4,40 +4,59 @@
 {% block content %}
 <div class="card">
     <div class="card-header">
-        <h3>ประวัติการยืม-คืนทั้งหมด</h3>
+        <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-history"/></svg> ประวัติการยืม-คืน</h3>
+        <div class="search-box">
+            <svg width="16" height="16" class="search-icon"><use href="#icon-search"/></svg>
+            <input type="text" id="searchHistory" placeholder="ค้นหา ชื่อ/รหัส/ชื่อหนังสือ..." oninput="filterHistory()">
+        </div>
     </div>
     <div class="card-body">
-        <table class="data-table">
+        <table class="data-table" id="historyTable">
             <thead>
                 <tr>
                     <th>สมาชิก</th><th>ชั้น</th><th>รหัสหนังสือ</th><th>ชื่อหนังสือ</th>
-                    <th>วันที่ยืม</th><th>กำหนดคืน</th><th>วันที่คืน</th><th>สถานะ</th>
+                    <th>วันที่ยืม</th><th>กำหนดคืน</th><th>สถานะ</th>
                 </tr>
             </thead>
             <tbody>
                 {% for r in records %}
-                <tr>
+                <tr data-search="{{ r.name }} {{ r.grade }} {{ r.code }} {{ r.title }}">
                     <td>{{ r.name }}</td>
                     <td>{{ r.grade }}</td>
                     <td>{{ r.code }}</td>
                     <td>{{ r.title }}</td>
                     <td>{{ r.borrow_date }}</td>
                     <td>{{ r.return_due }}</td>
-                    <td>{{ r.return_date or '—' }}</td>
                     <td>
                         {% if r.returned %}
-                        <span class="badge badge-success">คืนแล้ว</span>
+                        <span class="badge badge-success">
+                            <svg width="12" height="12" class="icon-inline"><use href="#icon-check-circle"/></svg>
+                            คืนแล้ว
+                        </span>
                         {% else %}
-                        <span class="badge badge-warning">กำลังยืม</span>
+                        <span class="badge badge-warning">
+                            <svg width="12" height="12" class="icon-inline"><use href="#icon-clock"/></svg>
+                            กำลังยืม
+                        </span>
                         {% endif %}
                     </td>
                 </tr>
                 {% endfor %}
                 {% if not records %}
-                <tr><td colspan="8" class="text-center text-muted">ยังไม่มีประวัติ</td></tr>
+                <tr><td colspan="7" class="text-center text-muted">ยังไม่มีประวัติ</td></tr>
                 {% endif %}
             </tbody>
         </table>
     </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+function filterHistory() {
+    const q = document.getElementById('searchHistory').value.toLowerCase();
+    document.querySelectorAll('#historyTable tbody tr').forEach(row => {
+        row.style.display = (row.dataset.search || '').toLowerCase().includes(q) ? '' : 'none';
+    });
+}
+</script>
 {% endblock %}
