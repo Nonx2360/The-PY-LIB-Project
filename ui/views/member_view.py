@@ -13,6 +13,7 @@ from services.qr_service import QRService
 from services.pdf_service import PDFService
 from ui.widgets.confirm_dialog import show_confirm_dialog
 from ui.widgets.toast import show_toast
+from ui.widgets.pdf_viewer import PDFViewerWindow
 from core.logger import logger
 
 
@@ -227,14 +228,10 @@ class MemberView(ctk.CTkFrame):
                 PDFService.generate_member_card_pdf(
                     member[1], member[3], "assets/logos/school_logo.png",
                     card_path, member[6])
-            if os.name == "nt":
-                os.startfile(card_path)
-            else:
-                import subprocess
-                subprocess.run(["xdg-open", card_path])
+            PDFViewerWindow(self, card_path, title=f"บัตรสมาชิก — {member[1]}")
         except Exception as e:
             logger.error(f"view_card error: {e}", exc_info=True)
-            show_toast(self, f"ไม่สามารถสร้างบัตร: {e}", "red")
+            show_toast(self, f"ไม่สามารถเปิดบัตรได้: {e}", "red")
 
     def _delete_member(self, member):
         if not show_confirm_dialog(self, "ยืนยันการลบ",
