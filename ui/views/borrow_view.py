@@ -3,6 +3,7 @@ import customtkinter as ctk
 from datetime import datetime, timedelta
 
 import ui.theme as theme
+from config import settings
 from db.repositories.book_repo import BookRepository
 from db.repositories.borrow_repo import BorrowRepository
 from db.repositories.member_repo import MemberRepository
@@ -99,7 +100,7 @@ class BorrowView(ctk.CTkFrame):
         due_row.grid(row=1, column=0, sticky="w")
         ctk.CTkLabel(due_row, text="กำหนดคืน:", font=theme.font(14, bold=True),
                      text_color=theme.text_color()).pack(side="left", padx=(0, 8))
-        default_due = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+        default_due = (datetime.now() + timedelta(days=settings.get("default_loan_days"))).strftime("%Y-%m-%d")
         self.due_date_entry = theme.entry(due_row, width=120)
         self.due_date_entry.insert(0, default_due)
         self.due_date_entry.pack(side="left")
@@ -200,8 +201,9 @@ class BorrowView(ctk.CTkFrame):
             return
         current = self.borrow_repo.fetchone(
             "SELECT COUNT(*) FROM borrow_log WHERE member_id=? AND returned=0", (mid,))[0]
-        if current >= 3:
-            show_toast(self, "ยืมครบจำนวนที่กำหนดแล้ว (3 เล่ม)", "red")
+        max_books = settings.get("max_books_per_member")
+        if current >= max_books:
+            show_toast(self, f"ยืมครบจำนวนที่กำหนดแล้ว ({max_books} เล่ม)", "red")
             return
 
         borrow_date = datetime.now().strftime("%Y-%m-%d")

@@ -8,6 +8,7 @@ from tkinter import filedialog
 from PIL import Image
 
 import ui.theme as theme
+from config import settings
 from db.repositories.member_repo import MemberRepository
 from services.qr_service import QRService
 from services.pdf_service import PDFService
@@ -146,7 +147,7 @@ class MemberView(ctk.CTkFrame):
             return
 
         reg_date = datetime.now().strftime("%Y-%m-%d")
-        exp_date = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d")
+        exp_date = (datetime.now() + timedelta(days=settings.get("member_expiry_days"))).strftime("%Y-%m-%d")
         qr_data = f"{name}|{grade}|{number}|{reg_date}|{exp_date}"
 
         try:
