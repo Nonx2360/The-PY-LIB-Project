@@ -22,6 +22,11 @@ from core.logger import logger
 import sqlite3
 
 
+def _rows_to_dicts(rows, columns):
+    """Convert list of tuples to list of dicts."""
+    return [dict(zip(columns, row)) for row in rows]
+
+
 def create_app():
     app = Flask(__name__, static_folder="static", template_folder="templates")
     app.secret_key = secrets.token_hex(32)
@@ -83,9 +88,10 @@ def create_app():
     @login_required
     def members():
         rows = member_repo.fetchall(
-            "SELECT id, name, grade, number, reg_date, exp_date, qr_path "
+            "SELECT id, name, grade, number, register_date, expire_date, qrcode_path "
             "FROM members ORDER BY id DESC")
-        return render_template("members.html", members=rows)
+        members = _rows_to_dicts(rows, ["id", "name", "grade", "number", "register_date", "expire_date", "qrcode_path"])
+        return render_template("members.html", members=members)
 
     @app.route("/members/add", methods=["POST"])
     @login_required
@@ -124,7 +130,8 @@ def create_app():
     def books():
         rows = book_repo.fetchall(
             "SELECT id, code, title, status FROM books ORDER BY id DESC")
-        return render_template("books.html", books=rows)
+        books = _rows_to_dicts(rows, ["id", "code", "title", "status"])
+        return render_template("books.html", books=books)
 
     @app.route("/books/add", methods=["POST"])
     @login_required
@@ -167,8 +174,10 @@ def create_app():
 
         members = member_repo.fetchall(
             "SELECT id, name, grade, number FROM members ORDER BY name")
+        members = _rows_to_dicts(members, ["id", "name", "grade", "number"])
         books = book_repo.fetchall(
             "SELECT id, code, title FROM books WHERE status='ว่าง' ORDER BY title")
+        books = _rows_to_dicts(books, ["id", "code", "title"])
         default_due = (datetime.now() + timedelta(days=settings.get("default_loan_days"))).strftime("%Y-%m-%d")
         return render_template("borrow.html", members=members, books=books,
                                default_due=default_due)
@@ -188,13 +197,14 @@ def create_app():
             return redirect(url_for("return_book"))
 
         borrowed = borrow_repo.fetchall(
-            """SELECT bl.id, m.name, m.grade, m.number, b.code, b.title,
+            """SELECT bl.id, m.name, m.grade, m.number, b.id as book_id, b.code, b.title,
                       bl.borrow_date, bl.return_due
                FROM borrow_log bl
                JOIN members m ON bl.member_id=m.id
                JOIN books b ON bl.book_id=b.id
                WHERE bl.returned=0
                ORDER BY bl.borrow_date DESC""")
+        borrowed = _rows_to_dicts(borrowed, ["id", "name", "grade", "number", "book_id", "code", "title", "borrow_date", "return_due"])
         return render_template("return_book.html", borrowed=borrowed)
 
     # ── History ───────────────────────────────────────────
@@ -203,19 +213,21 @@ def create_app():
     def history():
         rows = borrow_repo.fetchall(
             """SELECT m.name, m.grade, b.code, b.title,
-                      bl.borrow_date, bl.return_due, bl.return_date, bl.returned
+                      bl.borrow_date, bl.return_due, bl.returned
                FROM borrow_log bl
                JOIN members m ON bl.member_id=m.id
                JOIN books b ON bl.book_id=b.id
                ORDER BY bl.id DESC""")
-        return render_template("history.html", records=rows)
+        records = _rows_to_dicts(rows, ["name", "grade", "code", "title", "borrow_date", "return_due", "returned"])
+        return render_template("history.html", records=records)
 
     # ── Access History ────────────────────────────────────
     @app.route("/access")
     @login_required
     def access():
         rows = access_repo.get_recent_access(limit=100)
-        return render_template("access.html", records=rows)
+        records = _rows_to_dicts(rows, ["access_time", "name", "grade", "action"])
+        return render_template("access.html", records=records)
 
     # ── Settings ──────────────────────────────────────────
     @app.route("/settings", methods=["GET", "POST"])

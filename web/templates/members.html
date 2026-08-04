@@ -43,8 +43,8 @@
                     <td>{{ m.name }}</td>
                     <td>{{ m.grade }}</td>
                     <td>{{ m.number }}</td>
-                    <td>{{ m.reg_date }}</td>
-                    <td>{{ m.exp_date }}</td>
+                    <td>{{ m.register_date }}</td>
+                    <td>{{ m.expire_date }}</td>
                     <td>
                         <form method="POST" action="{{ url_for('member_delete', mid=m.id) }}"
                               onsubmit="return confirm('ลบสมาชิก {{ m.name }}?');">
