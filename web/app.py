@@ -30,6 +30,11 @@ def create_app():
     app = Flask(__name__, static_folder="static", template_folder="templates")
     app.secret_key = secrets.token_hex(32)
 
+    @app.route("/assets/<path:filename>")
+    def serve_assets(filename):
+        from flask import send_from_directory
+        return send_from_directory(os.path.join(app.root_path, ".."), "assets/" + filename)
+
     member_repo = MemberRepository()
     book_repo = BookRepository()
     borrow_repo = BorrowRepository()
