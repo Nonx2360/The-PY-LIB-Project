@@ -78,7 +78,7 @@ a { text-decoration: none; color: inherit; }
 .card-body { padding: 20px; }
 
 /* ── Stats ───────────────────────────────────── */
-.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; align-items: start; }
 .stat-card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 24px; text-align: center;
@@ -98,7 +98,7 @@ a { text-decoration: none; color: inherit; }
 .stat-overdue .stat-number { color: var(--danger); }
 
 /* ── Action Cards ────────────────────────────── */
-.actions-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; }
+.actions-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: start; }
 .action-card {
     background: var(--surface); border: 1px solid var(--border);
     border-radius: var(--radius); padding: 28px 20px; text-align: center;
