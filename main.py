@@ -125,10 +125,21 @@ class LibraryApp:
             )
         ''')
         
-        # Insert default admin user if not exists
-        self.cursor.execute("SELECT * FROM admin_users WHERE username = 'admin'")
-        if not self.cursor.fetchone():
-            self.cursor.execute("INSERT INTO admin_users VALUES (?, ?)", ('admin', 'admin123'))
+        # Insert default admin user if not exists (with bcrypt hash)
+        from core.security import hash_password
+        self.cursor.execute("SELECT password FROM admin_users WHERE username = 'admin'")
+        admin_row = self.cursor.fetchone()
+        if not admin_row:
+            hashed_default = hash_password('admin123')
+            self.cursor.execute("INSERT INTO admin_users VALUES (?, ?)", ('admin', hashed_default))
+        
+        # Check and migrate any plain-text passwords to bcrypt hashes
+        self.cursor.execute("SELECT username, password FROM admin_users")
+        all_users = self.cursor.fetchall()
+        for username, pwd in all_users:
+            if not (pwd.startswith('$2a$') or pwd.startswith('$2b$') or pwd.startswith('$2y$')):
+                new_hash = hash_password(pwd)
+                self.cursor.execute("UPDATE admin_users SET password = ? WHERE username = ?", (new_hash, username))
             
         self.conn.commit()
         
@@ -189,9 +200,10 @@ class LibraryApp:
             return
             
         try:
-            self.cursor.execute("SELECT * FROM admin_users WHERE username = ? AND password = ?", 
-                              (username, password))
-            if self.cursor.fetchone():
+            self.cursor.execute("SELECT password FROM admin_users WHERE username = ?", (username,))
+            row = self.cursor.fetchone()
+            from core.security import verify_password
+            if row and verify_password(password, row[0]):
                 self.show_dashboard()
             else:
                 self.login_error_label.configure(text="ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
@@ -329,7 +341,8 @@ class LibraryApp:
         register_date = datetime.now().strftime("%Y-%m-%d")
         expire_date = (datetime.now() + timedelta(days=365)).strftime("%Y-%m-%d")
         qr_data = f"{name}|{grade}|{number}|{register_date}|{expire_date}"
-        encoded_data = base64.b64encode(qr_data.encode()).decode()
+        from core.security import encrypt_qr_data
+        encoded_data = encrypt_qr_data(qr_data)
         
         # Generate QR code
         qr = qrcode.QRCode(version=1, box_size=10, border=5)
@@ -901,7 +914,8 @@ class LibraryApp:
                             
                             # Decode QR data
                             qr_data = obj.data.decode('utf-8')
-                            decoded_data = base64.b64decode(qr_data).decode()
+                            from core.security import decrypt_qr_data
+                            decoded_data = decrypt_qr_data(qr_data)
                             name, grade, number, register_date, expire_date = decoded_data.split("|")
                             
                             # Update status
@@ -1223,7 +1237,8 @@ class LibraryApp:
                             
                             # Decode QR data
                             qr_data = obj.data.decode('utf-8')
-                            decoded_data = base64.b64decode(qr_data).decode()
+                            from core.security import decrypt_qr_data
+                            decoded_data = decrypt_qr_data(qr_data)
                             name, grade, number, register_date, expire_date = decoded_data.split("|")
                             
                             # Update status
@@ -1660,7 +1675,7 @@ class LibraryApp:
             user_row = ctk.CTkFrame(table_frame)
             user_row.pack(fill="x", padx=5, pady=1)
             ctk.CTkLabel(user_row, text=user[0], font=("Sarabun", 13), width=120, anchor="w").pack(side="left", padx=5)
-            ctk.CTkLabel(user_row, text=user[1], font=("Sarabun", 13), width=120, anchor="w").pack(side="left", padx=5)
+            ctk.CTkLabel(user_row, text="********", font=("Sarabun", 13), width=120, anchor="w").pack(side="left", padx=5)
 
             def make_delete_user(username):
                 return lambda: self.delete_user(username)
@@ -1692,7 +1707,9 @@ class LibraryApp:
                 self.show_error("กรุณากรอกชื่อผู้ใช้และรหัสผ่าน")
                 return
             try:
-                self.cursor.execute("INSERT OR REPLACE INTO admin_users (username, password) VALUES (?, ?)", (username, password))
+                from core.security import hash_password
+                hashed_pw = hash_password(password)
+                self.cursor.execute("INSERT OR REPLACE INTO admin_users (username, password) VALUES (?, ?)", (username, hashed_pw))
                 self.conn.commit()
                 self.show_success("บันทึกผู้ใช้สำเร็จ")
                 self.show_settings()  # refresh table
@@ -1746,7 +1763,9 @@ class LibraryApp:
                 self.show_error("กรุณากรอกรหัสผ่านใหม่")
                 return
             try:
-                self.cursor.execute("UPDATE admin_users SET password = ? WHERE username = ?", (new_pass, username))
+                from core.security import hash_password
+                hashed_pw = hash_password(new_pass)
+                self.cursor.execute("UPDATE admin_users SET password = ? WHERE username = ?", (hashed_pw, username))
                 self.conn.commit()
                 self.show_success("เปลี่ยนรหัสผ่านสำเร็จ")
                 popup.destroy()
@@ -1889,7 +1908,8 @@ class LibraryApp:
                             
                             # Decode QR data
                             qr_data = obj.data.decode('utf-8')
-                            decoded_data = base64.b64decode(qr_data).decode()
+                            from core.security import decrypt_qr_data
+                            decoded_data = decrypt_qr_data(qr_data)
                             name, grade, number, register_date, expire_date = decoded_data.split("|")
                             
                             # Update status
@@ -2521,6 +2541,76 @@ class DatePicker:
         self.due_date_entry.insert(0, future_date)
 
 if __name__ == "__main__":
-    app = LibraryApp()
+    import sys
+    
+    if "--debug" in sys.argv:
+        import logging
+        import inspect
+        import functools
+        import traceback
+        
+        # 1. Setup Logging
+        logging.basicConfig(
+            level=logging.DEBUG,
+            format='%(asctime)s [%(levelname)s] (%(threadName)s) %(message)s',
+            handlers=[
+                logging.StreamHandler(sys.stdout),
+                logging.FileHandler("debug.log", encoding="utf-8")
+            ]
+        )
+        logger = logging.getLogger("DebugLogger")
+        logger.info("=== Debug Mode Enabled ===")
 
-    app.run() 
+        # 2. Hook global unhandled exceptions
+        def exception_hook(exctype, value, tb):
+            logger.error("Unhandled main thread exception:", exc_info=(exctype, value, tb))
+            sys.__excepthook__(exctype, value, tb)
+        sys.excepthook = exception_hook
+
+        # 3. Hook thread exceptions
+        def thread_exception_hook(args):
+            logger.error(f"Unhandled exception in thread '{args.thread.name}':", 
+                         exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+        threading.excepthook = thread_exception_hook
+
+        # 4. Decorator to trace methods
+        def trace_methods(instance):
+            for attr_name in dir(instance):
+                # Skip magic/private methods
+                if attr_name.startswith('__') and attr_name.endswith('__'):
+                    continue
+                try:
+                    attr = getattr(instance, attr_name)
+                    if inspect.ismethod(attr) or inspect.isfunction(attr):
+                        def make_wrapper(func_name, func_obj):
+                            @functools.wraps(func_obj)
+                            def wrapper(*args, **kwargs):
+                                safe_args = args[1:] if len(args) > 0 else ()
+                                logger.debug(f"▶ [ENTER] {func_name} | Args: {safe_args} | Kwargs: {kwargs}")
+                                start_t = time.time()
+                                try:
+                                    res = func_obj(*args, **kwargs)
+                                    duration = time.time() - start_t
+                                    logger.debug(f"◀ [EXIT]  {func_name} | Duration: {duration:.4f}s")
+                                    return res
+                                except Exception as exc:
+                                    duration = time.time() - start_t
+                                    logger.error(f"❌ [ERROR] {func_name} | Duration: {duration:.4f}s | Msg: {exc}\n{traceback.format_exc()}")
+                                    raise exc
+                            return wrapper
+                        setattr(instance, attr_name, make_wrapper(attr_name, attr))
+                except Exception as e:
+                    pass
+
+        # Instantiate app
+        app = LibraryApp()
+        
+        # Apply tracing to the created app instance methods
+        trace_methods(app)
+        
+        # Run app
+        app.run()
+    else:
+        app = LibraryApp()
+        app.run()
+ 
