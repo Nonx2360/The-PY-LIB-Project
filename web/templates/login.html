@@ -11,7 +11,8 @@
     {% include 'icons.svg' %}
     <div class="login-container">
         <div class="login-brand">
-            <div class="brand-icon-lg">
+            <img src="{{ url_for('serve_assets', filename='logos/school_logo.png') }}" alt="Logo" class="brand-logo-lg" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+            <div class="brand-icon-lg" style="display:none">
                 <svg width="64" height="64"><use href="#icon-book-open"/></svg>
             </div>
             <h1>THE PY-LIB</h1>

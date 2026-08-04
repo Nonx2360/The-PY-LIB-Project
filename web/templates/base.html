@@ -12,17 +12,10 @@
     <div class="layout">
         <nav class="sidebar">
             <div class="sidebar-brand">
-                {% set logo = config.get('school_logo_path', '') if config is defined else '' %}
-                {% if logo %}
-                <img src="{{ url_for('static', filename='../' + logo) }}" alt="Logo" class="brand-logo" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <img src="{{ url_for('serve_assets', filename='logos/school_logo.png') }}" alt="Logo" class="brand-logo" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
                 <div class="brand-icon" style="display:none">
                     <svg width="28" height="28"><use href="#icon-book-open"/></svg>
                 </div>
-                {% else %}
-                <div class="brand-icon">
-                    <svg width="28" height="28"><use href="#icon-book-open"/></svg>
-                </div>
-                {% endif %}
                 <div class="brand-text">
                     <div class="brand-name">THE PY-LIB</div>
                     <div class="brand-sub">ระบบห้องสมุด</div>
