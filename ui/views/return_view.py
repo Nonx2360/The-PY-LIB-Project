@@ -108,7 +108,7 @@ class ReturnView(ctk.CTkFrame):
             w.destroy()
 
         books = self.borrow_repo.fetchall('''
-            SELECT b.id, b.code, b.title, bl.borrow_date, bl.return_due
+            SELECT bl.id, b.code, b.title, bl.borrow_date, bl.return_due
             FROM books b
             JOIN borrow_log bl ON b.id = bl.book_id
             WHERE bl.member_id = ? AND bl.returned = 0
@@ -125,7 +125,7 @@ class ReturnView(ctk.CTkFrame):
         today = datetime.now().date()
 
         for book in books:
-            bid, code, title, borrow_date, due = book
+            bl_id, code, title, borrow_date, due = book
             row = theme.card(self.books_frame, corner_radius=10)
             row.pack(fill="x", padx=4, pady=4)
             row.grid_columnconfigure(1, weight=1)
@@ -151,16 +151,25 @@ class ReturnView(ctk.CTkFrame):
              if overdue else theme.badge_amber(row, f"กำหนดคืน {due}")).grid(
                 row=0, column=3, rowspan=2, padx=4)
 
-            theme.success_button(row, "คืนหนังสือ", lambda bb=bid: self._return_book(bb),
-                                 width=110, height=32, font=theme.font(13, bold=True)).grid(
+            # fetch the book_id for this borrow record so we can update book status
+            book_row = self.borrow_repo.fetchone(
+                "SELECT book_id FROM borrow_log WHERE id = ?", (bl_id,))
+            book_id = book_row[0] if book_row else None
+            theme.success_button(
+                row, "คืนหนังสือ",
+                lambda b=bl_id, bk=book_id: self._return_book(b, bk),
+                width=110, height=32, font=theme.font(13, bold=True)).grid(
                 row=0, column=4, rowspan=2, padx=(6, 10))
 
-    def _return_book(self, book_id):
+    def _return_book(self, record_id, book_id):
         try:
-            self.borrow_repo.mark_returned(book_id)
-            self.book_repo.update_status(book_id, "ว่าง")
+            logger.debug(f"Returning borrow_log id={record_id}, book_id={book_id}")
+            self.borrow_repo.mark_returned(record_id)
+            if book_id is not None:
+                self.book_repo.update_status(book_id, "ว่าง")
             show_toast(self, "คืนหนังสือสำเร็จ", "green")
             if self._current_member:
+                logger.debug(f"Reloading books for member id={self._current_member['id']}")
                 self._load_borrowed_books(self._current_member["id"])
         except Exception as e:
             logger.error(f"return_book error: {e}", exc_info=True)
