@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}ตั้งค่า — THE PY-LIB{% endblock %}
+{% block page_title %}ตั้งค่า{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h3>การตั้งค่าระบบ</h3>
+    </div>
+    <div class="card-body">
+        <form method="POST" class="form-grid">
+            <div class="form-group">
+                <label>ชื่อโรงเรียน</label>
+                <input type="text" name="school_name" value="{{ settings.school_name }}" required>
+            </div>
+            <div class="form-group">
+                <label>ระยะเวลาการยืมเริ่มต้น (วัน)</label>
+                <input type="number" name="default_loan_days" value="{{ settings.default_loan_days }}" min="1" max="90" required>
+            </div>
+            <div class="form-group">
+                <label>จำนวนหนังสือสูงสุดต่อคน</label>
+                <input type="number" name="max_books_per_member" value="{{ settings.max_books_per_member }}" min="1" max="20" required>
+            </div>
+            <div class="form-group">
+                <label>อายุบัตรสมาชิก (วัน)</label>
+                <input type="number" name="member_expiry_days" value="{{ settings.member_expiry_days }}" min="30" max="3650" required>
+            </div>
+            <div class="form-group form-actions">
+                <button type="submit" class="btn btn-primary">บันทึกการตั้งค่า</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

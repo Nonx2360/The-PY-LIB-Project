@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}สมาชิก — THE PY-LIB{% endblock %}
+{% block page_title %}จัดการสมาชิก{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h3>เพิ่มสมาชิกใหม่</h3>
+    </div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('member_add') }}" class="form-inline">
+            <div class="form-group">
+                <label>ชื่อ-สกุล</label>
+                <input type="text" name="name" placeholder="ชื่อ นามสกุล" required>
+            </div>
+            <div class="form-group">
+                <label>ชั้น/ห้อง</label>
+                <input type="text" name="grade" placeholder="ม.4/1" required>
+            </div>
+            <div class="form-group">
+                <label>หมายเลข</label>
+                <input type="text" name="number" placeholder="12345" required>
+            </div>
+            <button type="submit" class="btn btn-success">เพิ่มสมาชิก</button>
+        </form>
+    </div>
+</div>
+<div class="card">
+    <div class="card-header">
+        <h3>รายชื่อสมาชิก ({{ members|length }} คน)</h3>
+    </div>
+    <div class="card-body">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>#</th><th>ชื่อ</th><th>ชั้น</th><th>หมายเลข</th>
+                    <th>วันที่ลงทะเบียน</th><th>วันหมดอายุ</th><th>จัดการ</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for m in members %}
+                <tr>
+                    <td>{{ m.id }}</td>
+                    <td>{{ m.name }}</td>
+                    <td>{{ m.grade }}</td>
+                    <td>{{ m.number }}</td>
+                    <td>{{ m.reg_date }}</td>
+                    <td>{{ m.exp_date }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('member_delete', mid=m.id) }}"
+                              onsubmit="return confirm('ลบสมาชิก {{ m.name }}?');">
+                            <button type="submit" class="btn btn-danger btn-sm">ลบ</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not members %}
+                <tr><td colspan="7" class="text-center text-muted">ยังไม่มีสมาชิก</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

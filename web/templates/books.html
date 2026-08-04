@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}หนังสือ — THE PY-LIB{% endblock %}
+{% block page_title %}จัดการหนังสือ{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h3>เพิ่มหนังสือใหม่</h3>
+    </div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('book_add') }}" class="form-inline">
+            <div class="form-group">
+                <label>รหัสหนังสือ</label>
+                <input type="text" name="code" placeholder="T-001" required>
+            </div>
+            <div class="form-group">
+                <label>ชื่อหนังสือ</label>
+                <input type="text" name="title" placeholder="ชื่อหนังสือ" required>
+            </div>
+            <button type="submit" class="btn btn-success">เพิ่มหนังสือ</button>
+        </form>
+    </div>
+</div>
+<div class="card">
+    <div class="card-header">
+        <h3>หนังสือทั้งหมด ({{ books|length }} เล่ม)</h3>
+    </div>
+    <div class="card-body">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>#</th><th>รหัส</th><th>ชื่อหนังสือ</th><th>สถานะ</th><th>จัดการ</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in books %}
+                <tr>
+                    <td>{{ b.id }}</td>
+                    <td>{{ b.code }}</td>
+                    <td>{{ b.title }}</td>
+                    <td>
+                        <span class="badge {% if b.status == 'ว่าง' %}badge-success{% else %}badge-warning{% endif %}">
+                            {{ b.status }}
+                        </span>
+                    </td>
+                    <td>
+                        <form method="POST" action="{{ url_for('book_delete', bid=b.id) }}"
+                              onsubmit="return confirm('ลบหนังสือ {{ b.title }}?');">
+                            <button type="submit" class="btn btn-danger btn-sm">ลบ</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not books %}
+                <tr><td colspan="5" class="text-center text-muted">ยังไม่มีหนังสือ</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

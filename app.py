@@ -17,6 +17,7 @@ from ui.views.return_view import ReturnView
 from ui.views.history_view import HistoryView
 from ui.views.access_view import AccessScannerView, AccessHistoryView
 from ui.views.settings_view import SettingsView
+from ui.views.webui_view import WebUIView
 
 
 class LibraryApp(ctk.CTk):
@@ -31,12 +32,14 @@ class LibraryApp(ctk.CTk):
         ("access", "บันทึกเข้าออก", "บันทึกการเข้าออก", AccessScannerView),
         ("access_history", "ประวัติเข้าออก", "ประวัติการเข้าออก", AccessHistoryView),
         ("settings", "ตั้งค่า", "ตั้งค่า", SettingsView),
+        ("webui", "Web UI", "Web UI", WebUIView),
     ]
     SIDEBAR_GROUPS = [
         ("", ["home"]),
         ("จัดการ", ["members", "books"]),
         ("ยืม-คืน", ["borrow", "return", "history"]),
         ("ห้องสมุด", ["access", "access_history"]),
+        ("เพิ่มเติม", ["webui"]),
         ("ระบบ", ["settings"]),
     ]
 

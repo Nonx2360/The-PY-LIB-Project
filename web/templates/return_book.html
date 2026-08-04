@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}คืนหนังสือ — THE PY-LIB{% endblock %}
+{% block page_title %}คืนหนังสือ{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h3>หนังสือที่กำลังยืมอยู่ ({{ borrowed|length }} เล่ม)</h3>
+    </div>
+    <div class="card-body">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>#</th><th>สมาชิก</th><th>ชั้น</th><th>หนังสือ</th>
+                    <th>วันที่ยืม</th><th>กำหนดคืน</th><th>จัดการ</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for b in borrowed %}
+                <tr>
+                    <td>{{ b.id }}</td>
+                    <td>{{ b.name }}</td>
+                    <td>{{ b.grade }}</td>
+                    <td>{{ b.title }}</td>
+                    <td>{{ b.borrow_date }}</td>
+                    <td>{{ b.return_due }}</td>
+                    <td>
+                        <form method="POST" class="inline-form">
+                            <input type="hidden" name="record_id" value="{{ b.id }}">
+                            <input type="hidden" name="book_id" value="{{ b.book_id }}">
+                            <button type="submit" class="btn btn-primary btn-sm">คืน</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not borrowed %}
+                <tr><td colspan="7" class="text-center text-muted">ไม่มีหนังสือที่ต้องคืน</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

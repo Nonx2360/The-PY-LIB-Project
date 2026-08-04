@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}ประวัติเข้าออก — THE PY-LIB{% endblock %}
+{% block page_title %}ประวัติเข้าออก{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h3>ประวัติการเข้าออกห้องสมุด</h3>
+    </div>
+    <div class="card-body">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>เวลา</th><th>ชื่อ</th><th>ชั้น</th><th>การกระทำ</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for r in records %}
+                <tr>
+                    <td>{{ r.access_time }}</td>
+                    <td>{{ r.name }}</td>
+                    <td>{{ r.grade }}</td>
+                    <td>
+                        <span class="badge {% if 'เข้า' in r.action %}badge-success{% else %}badge-danger{% endif %}">
+                            {{ r.action }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+                {% if not records %}
+                <tr><td colspan="4" class="text-center text-muted">ยังไม่มีประวัติ</td></tr>
+                {% endif %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

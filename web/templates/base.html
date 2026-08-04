@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}THE PY-LIB{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="layout">
+        <nav class="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon">📚</div>
+                <div class="brand-text">
+                    <div class="brand-name">THE PY-LIB</div>
+                    <div class="brand-sub">ระบบห้องสมุด</div>
+                </div>
+            </div>
+            <div class="nav-links">
+                <a href="{{ url_for('dashboard') }}" class="nav-link {% if request.endpoint == 'dashboard' %}active{% endif %}">
+                    <span class="nav-icon">📊</span> แดชบอร์ด
+                </a>
+                <a href="{{ url_for('members') }}" class="nav-link {% if request.endpoint == 'members' %}active{% endif %}">
+                    <span class="nav-icon">👥</span> สมาชิก
+                </a>
+                <a href="{{ url_for('books') }}" class="nav-link {% if request.endpoint == 'books' %}active{% endif %}">
+                    <span class="nav-icon">📖</span> หนังสือ
+                </a>
+                <a href="{{ url_for('borrow') }}" class="nav-link {% if request.endpoint == 'borrow' %}active{% endif %}">
+                    <span class="nav-icon">📤</span> ยืมหนังสือ
+                </a>
+                <a href="{{ url_for('return_book') }}" class="nav-link {% if request.endpoint == 'return_book' %}active{% endif %}">
+                    <span class="nav-icon">📥</span> คืนหนังสือ
+                </a>
+                <a href="{{ url_for('history') }}" class="nav-link {% if request.endpoint == 'history' %}active{% endif %}">
+                    <span class="nav-icon">📋</span> ประวัติยืม-คืน
+                </a>
+                <a href="{{ url_for('access') }}" class="nav-link {% if request.endpoint == 'access' %}active{% endif %}">
+                    <span class="nav-icon">🚪</span> ประวัติเข้าออก
+                </a>
+                <a href="{{ url_for('settings_page') }}" class="nav-link {% if request.endpoint == 'settings_page' %}active{% endif %}">
+                    <span class="nav-icon">⚙️</span> ตั้งค่า
+                </a>
+            </div>
+            <div class="sidebar-footer">
+                <a href="{{ url_for('logout') }}" class="nav-link logout-link">
+                    <span class="nav-icon">🚪</span> ออกจากระบบ
+                </a>
+            </div>
+        </nav>
+        <main class="main-content">
+            <header class="top-bar">
+                <h1>{% block page_title %}{% endblock %}</h1>
+                <div class="user-info">
+                    <span class="user-badge">{{ session.username }}</span>
+                </div>
+            </header>
+            <div class="content">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                {% if messages %}
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+                {% endfor %}
+                {% endif %}
+                {% endwith %}
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
+</body>
+</html>

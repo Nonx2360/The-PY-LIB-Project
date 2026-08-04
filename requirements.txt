@@ -11,3 +11,4 @@ reportlab
 pandas
 numpy
 PyMuPDF
+flask
