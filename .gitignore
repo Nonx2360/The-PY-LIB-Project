@@ -12,4 +12,4 @@ debug.log
 # runtime-generated member data (PII) — never publish to the repo
 /assets/cards/
 /assets/qrcodes/
-
+/.vscode
