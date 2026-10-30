@@ -68,9 +68,19 @@
                         {% endif %}
                         <form method="POST" action="{{ url_for('book_delete', bid=b.id) }}" class="inline-form">
                             {{ csrf_field }}
-                            <button type="submit" class="btn btn-danger btn-sm" title="ลบ" onclick="return confirm('ลบหนังสือ {{ b.title }}?');">
+                            {% if b.status == 'หยุดให้บริการ' %}
+                            <button type="submit" class="btn btn-danger btn-sm"
+                                    title="ลบถาวร พร้อมประวัติการยืม {{ b.history }} รายการ"
+                                    onclick="return confirm('ลบถาวร: หนังสือ {{ b.title }} พร้อมประวัติการยืม {{ b.history }} รายการ — ลบแล้วไม่สามารถย้อนกลับ ยืนยันหรือไม่?');">
+                                <svg width="14" height="14"><use href="#icon-trash"/></svg> ลบถาวร
+                            </button>
+                            {% else %}
+                            <button type="submit" class="btn btn-danger btn-sm"
+                                    title="{% if b.history %}มีประวัติการยืม — ต้องกด หยุด ก่อนจึงลบถาวรได้{% else %}ลบ{% endif %}"
+                                    onclick="return confirm('ลบหนังสือ {{ b.title }}?');">
                                 <svg width="14" height="14"><use href="#icon-trash"/></svg>
                             </button>
+                            {% endif %}
                         </form>
                     </td>
                 </tr>

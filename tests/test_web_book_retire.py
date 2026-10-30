@@ -167,11 +167,11 @@ class TestWebBookRetire(unittest.TestCase):
         self.assertIn("หยุดให้บริการอยู่แล้ว", resp.get_data(as_text=True))
         self.assertEqual(self._status(bid), "หยุดให้บริการ")
 
-    def test_retired_book_keeps_deletion_guard(self):
-        # give the book borrow history, retire+restore it, then delete:
-        # the history guard must still refuse (retire never hides history)
-        bid, _ = self._add_book("R-005")
-        mid = self._add_member("40003")
+    def test_delete_retired_book_with_history_purges_both(self):
+        # sanctioned two-step destructive path: retire THEN delete → book and
+        # its borrow_log rows vanish together, everything else stays intact
+        bid, _ = self._add_book("R-006")
+        mid = self._add_member("40004")
         self.client.post("/borrow", data={
             "member_id": mid, "book_id": bid, "due_date": "2027-12-31",
             "csrf_token": self._csrf("/borrow")})
@@ -180,11 +180,48 @@ class TestWebBookRetire(unittest.TestCase):
         self.client.post("/return", data={
             "record_id": record, "csrf_token": self._csrf("/return")})
         self._retire(bid)
-        self._restore(bid)
+
         resp = self.client.post(f"/books/{bid}/delete",
                                 data={"csrf_token": self._csrf("/books")},
                                 follow_redirects=True)
-        self.assertIn("มีประวัติการยืม", resp.get_data(as_text=True))
-        remaining = harness.query(_env.db_path,
-                                  "SELECT COUNT(*) FROM books WHERE id=?", (bid,))
-        self.assertEqual(remaining, [(1,)])
+        self.assertIn("ลบหนังสือและประวัติการยืมของเล่มนี้แบบถาวรแล้ว",
+                      resp.get_data(as_text=True))
+        self.assertEqual(harness.query(
+            _env.db_path, "SELECT COUNT(*) FROM books WHERE id=?", (bid,)), [(0,)])
+        self.assertEqual(harness.query(
+            _env.db_path, "SELECT COUNT(*) FROM borrow_log WHERE book_id=?", (bid,)),
+            [(0,)])
+        # the member (and their other records) is untouched by the purge
+        self.assertEqual(harness.query(
+            _env.db_path, "SELECT COUNT(*) FROM members WHERE id=?", (mid,)), [(1,)])
+
+    def test_delete_retired_book_without_history_succeeds(self):
+        bid, _ = self._add_book("R-007")
+        self._retire(bid)
+        resp = self.client.post(f"/books/{bid}/delete",
+                                data={"csrf_token": self._csrf("/books")},
+                                follow_redirects=True)
+        self.assertIn("แบบถาวรแล้ว", resp.get_data(as_text=True))
+        self.assertEqual(harness.query(
+            _env.db_path, "SELECT COUNT(*) FROM books WHERE id=?", (bid,)), [(0,)])
+
+    def test_history_refusal_now_points_to_retire(self):
+        bid, _ = self._add_book("R-008")
+        mid = self._add_member("40005")
+        self.client.post("/borrow", data={
+            "member_id": mid, "book_id": bid, "due_date": "2027-12-31",
+            "csrf_token": self._csrf("/borrow")})
+        record = harness.query(_env.db_path,
+                               "SELECT id FROM borrow_log ORDER BY id DESC LIMIT 1")[0][0]
+        self.client.post("/return", data={
+            "record_id": record, "csrf_token": self._csrf("/return")})
+
+        resp = self.client.post(f"/books/{bid}/delete",
+                                data={"csrf_token": self._csrf("/books")},
+                                follow_redirects=True)
+        body = resp.get_data(as_text=True)
+        self.assertIn("กดปุ่ม หยุด", body)      # the escape hatch is named
+        self.assertNotIn("ลบหนังสือสำเร็จ", body)
+        self.assertEqual(harness.query(
+            _env.db_path, "SELECT COUNT(*) FROM books WHERE id=?", (bid,)), [(1,)])
+

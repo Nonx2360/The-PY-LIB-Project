@@ -257,8 +257,10 @@ def create_app():
     @login_required
     def books():
         rows = book_repo.fetchall(
-            "SELECT id, code, title, status FROM books ORDER BY id DESC")
-        books_ = _rows_to_dicts(rows, ["id", "code", "title", "status"])
+            """SELECT bo.id, bo.code, bo.title, bo.status,
+                      (SELECT COUNT(*) FROM borrow_log bl WHERE bl.book_id=bo.id) AS history
+               FROM books bo ORDER BY bo.id DESC""")
+        books_ = _rows_to_dicts(rows, ["id", "code", "title", "status", "history"])
         return render_template("books.html", books=books_)
 
     @app.route("/books/add", methods=["POST"])
@@ -281,19 +283,41 @@ def create_app():
     @app.route("/books/<int:bid>/delete", methods=["POST"])
     @login_required
     def book_delete(bid):
+        book = book_repo.fetchone("SELECT status FROM books WHERE id=?", (bid,))
+        if book is None:
+            flash("ไม่พบหนังสือในระบบ", "error")
+            return redirect(url_for("books"))
+        if book[0] == "หยุดให้บริการ":
+            # Deliberate two-step purge: a RETIRED copy is removed together
+            # with its borrow_log rows inside ONE transaction. The librarian
+            # chose withdrawal first; this path makes the history loss an
+            # explicit, confirmed decision — never reachable by one click
+            # on an active catalog entry.
+            def _purge(conn):
+                conn.execute("DELETE FROM borrow_log WHERE book_id=?", (bid,))
+                conn.execute("DELETE FROM books WHERE id=?", (bid,))
+            try:
+                borrow_repo.transact(_purge)
+            except sqlite3.Error:
+                logger.info("web book purge failed: id=%s", bid)
+                flash("ลบไม่สำเร็จ กรุณาลองใหม่", "error")
+                return redirect(url_for("books"))
+            logger.info("Web: retired book purged with its history: id=%s", bid)
+            flash("ลบหนังสือและประวัติการยืมของเล่มนี้แบบถาวรแล้ว", "success")
+            return redirect(url_for("books"))
         active = borrow_repo.fetchone(
             "SELECT COUNT(*) FROM borrow_log WHERE book_id=? AND returned=0", (bid,))[0]
         if active > 0:
             flash("ไม่สามารถลบได้ — มีการยืมหนังสือเล่มนี้อยู่", "error")
             return redirect(url_for("books"))
         # borrow_log -> books is a FOREIGN KEY (data-integrity phase): a book
-        # with returned history may never be deleted. Refuse with a Thai
-        # message instead of letting sqlite3.IntegrityError surface as a 500.
+        # with returned history may never be deleted while in circulation.
+        # Point the librarian at the sanctioned path: retire first.
         history = borrow_repo.fetchone(
             "SELECT COUNT(*) FROM borrow_log WHERE book_id=?", (bid,))[0]
         if history > 0:
-            flash("ไม่สามารถลบได้ — หนังสือเล่มนี้มีประวัติการยืม "
-                  "ระบบเก็บประวัติไว้เพื่อความถูกต้องของข้อมูล", "error")
+            flash("ไม่สามารถลบได้ — เล่มนี้มีประวัติการยืม "
+                  "กดปุ่ม หยุด (หยุดให้บริการ) ก่อน แล้วจึงลบถาวรได้", "error")
             return redirect(url_for("books"))
         try:
             book_repo.delete(bid)

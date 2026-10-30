@@ -132,8 +132,8 @@ class BookView(ctk.CTkFrame):
         elif status == "หยุดให้บริการ":
             theme.ghost_button(row, "กลับมา", lambda bb=b: self._restore_book(bb),
                                width=56, height=30).grid(row=0, column=3, rowspan=2, padx=(6, 0))
-            theme.ghost_button(row, "ลบ", lambda bb=b: self._delete_book(bb),
-                               width=56, height=30, text_color=theme.DANGER).grid(
+            theme.ghost_button(row, "ลบถาวร", lambda bb=b: self._delete_book(bb),
+                               width=76, height=30, text_color=theme.DANGER).grid(
                 row=0, column=4, rowspan=2, padx=(6, 10))
         else:
             theme.ghost_button(row, "ลบ", lambda bb=b: self._delete_book(bb),
@@ -185,18 +185,42 @@ class BookView(ctk.CTkFrame):
             show_toast(self, "เกิดข้อผิดพลาด ไม่สามารถกลับมาให้บริการได้", "red")
 
     def _delete_book(self, book):
+        status = (book[3] or "").strip()
+        if status == "หยุดให้บริการ":
+            # two-step purge: retired copies may be erased permanently,
+            # together with their borrow_log rows, in one transaction
+            history = self.base.fetchone(
+                "SELECT COUNT(*) FROM borrow_log WHERE book_id = ?", (book[0],))[0]
+            if not show_confirm_dialog(
+                    self, "ยืนยันการลบถาวร",
+                    f"ลบ '{book[2]}' พร้อมประวัติการยืม {history} รายการแบบถาวร?\n"
+                    "ลบแล้วไม่สามารถย้อนกลับได้"):
+                return
+
+            def _purge(conn):
+                conn.execute("DELETE FROM borrow_log WHERE book_id=?", (book[0],))
+                conn.execute("DELETE FROM books WHERE id=?", (book[0],))
+
+            try:
+                self.base.transact(_purge)
+            except Exception as e:
+                logger.error(f"purge_book error: {e}", exc_info=True)
+                show_toast(self, "ลบไม่สำเร็จ กรุณาลองใหม่", "red")
+                return
+            show_toast(self, "ลบหนังสือและประวัติการยืมถาวรแล้ว", "green")
+            self._display_books()
+            return
         active = self.base.fetchone(
             "SELECT id FROM borrow_log WHERE book_id = ? AND returned = 0", (book[0],))
         if active:
             show_toast(self, "ไม่สามารถลบหนังสือที่กำลังถูกยืมอยู่ได้", "red")
             return
         # borrow_log -> books is a FOREIGN KEY: books with borrow history
-        # cannot be deleted — refuse clearly instead of a constraint error
+        # cannot be deleted while in circulation — point to the retire path
         history = self.base.fetchone(
             "SELECT id FROM borrow_log WHERE book_id = ? LIMIT 1", (book[0],))
         if history:
-            show_toast(self, "ไม่สามารถลบได้ — หนังสือเล่มนี้มีประวัติการยืม "
-                             "ระบบเก็บประวัติไว้เพื่อความถูกต้องของข้อมูล", "red")
+            show_toast(self, "ลบไม่ได้ — เล่มนี้มีประวัติการยืม กดปุ่ม หยุด ก่อน แล้วจึงลบถาวรได้", "red")
             return
         if not show_confirm_dialog(self, "ยืนยันการลบ",
                                    f"ลบหนังสือ '{book[2]}' (รหัส {book[1]}) ใช่หรือไม่?"):
