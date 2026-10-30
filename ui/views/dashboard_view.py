@@ -21,12 +21,12 @@ class DashboardView(ctk.CTkFrame):
         theme.heading(page, "หน้าหลัก", size=26).pack(anchor="w")
         theme.subheading(page, "ภาพรวมระบบห้องสมุด").pack(anchor="w", pady=(2, 18))
 
-        # ---- stat cards ----
+        # ---- stat cards - overdue first: it is the one number that asks for action ----
         stats = [
-            ("สมาชิกทั้งหมด", self._count("SELECT COUNT(*) FROM members"), theme.PRIMARY),
-            ("หนังสือทั้งหมด", self._count("SELECT COUNT(*) FROM books"), theme.INFO),
-            ("กำลังยืม", self._count("SELECT COUNT(*) FROM borrow_log WHERE returned = 0"), theme.WARNING),
             ("ค้างส่ง", self._count("SELECT COUNT(*) FROM borrow_log WHERE returned = 0 AND return_due < date('now')"), theme.DANGER),
+            ("กำลังยืม", self._count("SELECT COUNT(*) FROM borrow_log WHERE returned = 0"), theme.PRIMARY),
+            ("หนังสือทั้งหมด", self._count("SELECT COUNT(*) FROM books"), theme.PRIMARY),
+            ("สมาชิกทั้งหมด", self._count("SELECT COUNT(*) FROM members"), theme.PRIMARY),
         ]
         stat_row = ctk.CTkFrame(page, fg_color="transparent")
         stat_row.pack(fill="x", pady=(0, 22))
@@ -50,40 +50,34 @@ class DashboardView(ctk.CTkFrame):
 
         # ---- action tiles ----
         tiles = [
-            ("จัดการสมาชิก", "เพิ่ม ค้นหา และพิมพ์บัตร", theme.PRIMARY, self.nav.show_members),
-            ("จัดการหนังสือ", "เพิ่มหนังสือ หรือนำเข้า Excel", theme.INFO, self.nav.show_books),
-            ("ยืมหนังสือ", "สแกนบัตรและยืมหนังสือ", theme.SUCCESS, self.nav.show_borrow),
-            ("คืนหนังสือ", "สแกนบัตรและรับคืน", theme.WARNING, self.nav.show_return),
-            ("ประวัติยืม-คืน", "ค้นหาประวัติและส่งออก PDF", theme.PRIMARY, self.nav.show_history),
-            ("บันทึกเข้าออก", "สแกนบัตรเมื่อเข้าออกห้องสมุด", theme.INFO, self.nav.show_access_scanner),
-            ("ประวัติเข้าออก", "ดูและส่งออกประวัติ", theme.SUCCESS, self.nav.show_access_history),
-            ("ตั้งค่า", "ธีมการแสดงผลและข้อมูลระบบ", theme.WARNING, self.nav.show_settings),
+            ("จัดการสมาชิก", "เพิ่ม ค้นหา และพิมพ์บัตร", self.nav.show_members),
+            ("จัดการหนังสือ", "เพิ่มหนังสือ หรือนำเข้า Excel", self.nav.show_books),
+            ("ยืมหนังสือ", "สแกนบัตรและยืมหนังสือ", self.nav.show_borrow),
+            ("คืนหนังสือ", "สแกนบัตรและรับคืน", self.nav.show_return),
+            ("ประวัติยืม-คืน", "ค้นหาประวัติและส่งออก PDF", self.nav.show_history),
+            ("บันทึกเข้าออก", "สแกนบัตรเมื่อเข้าออกห้องสมุด", self.nav.show_access_scanner),
+            ("ประวัติเข้าออก", "ดูและส่งออกประวัติ", self.nav.show_access_history),
+            ("ตั้งค่า", "ธีมการแสดงผลและข้อมูลระบบ", self.nav.show_settings),
         ]
         grid = ctk.CTkFrame(page, fg_color="transparent")
         grid.pack(fill="x")
         for i in range(4):
             grid.grid_columnconfigure(i, weight=1)
 
-        for i, (title, desc, color, cmd) in enumerate(tiles):
+        for i, (title, desc, cmd) in enumerate(tiles):
             row, col = divmod(i, 4)
             tile = theme.card(grid)
             tile.grid(row=row, column=col, padx=6, pady=6, sticky="nsew")
             tile.bind("<Button-1>", lambda e, c=cmd: c())
             inner = ctk.CTkFrame(tile, fg_color="transparent")
             inner.pack(fill="x", padx=16, pady=14)
-            dot = ctk.CTkFrame(inner, width=10, height=10, fg_color=color, corner_radius=5)
-            dot.pack(side="left", padx=(0, 12))
-            dot.pack_propagate(False)
-            col_f = ctk.CTkFrame(inner, fg_color="transparent")
-            col_f.pack(side="left", fill="x", expand=True)
-            title_lbl = ctk.CTkLabel(col_f, text=title, font=theme.font(16, bold=True),
+            title_lbl = ctk.CTkLabel(inner, text=title,
+                                     font=theme.font(16, bold=True, display=True),
                                      text_color=theme.text_color(), anchor="w")
             title_lbl.pack(anchor="w")
             self._resizable_labels.append(title_lbl)
-            ctk.CTkLabel(col_f, text=desc, font=theme.font(12),
+            ctk.CTkLabel(inner, text=desc, font=theme.font(12),
                          text_color=theme.muted_color(), anchor="w").pack(anchor="w")
-            ctk.CTkLabel(inner, text="→", font=theme.font(16, bold=True),
-                         text_color=color).pack(side="right")
 
         self.winfo_toplevel().bind("<Configure>", self._on_resize)
 

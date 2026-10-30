@@ -19,7 +19,7 @@ def show_confirm_dialog(parent, title: str, message: str, ok_text: str = "ยื
                         border_width=1, border_color=border_color(), corner_radius=14)
     card.pack(padx=24, pady=20, fill="both", expand=True)
 
-    ctk.CTkLabel(card, text=title, font=font(19, bold=True),
+    ctk.CTkLabel(card, text=title, font=font(19, bold=True, display=True),
                  text_color=text_color()).pack(pady=(18, 6), padx=24, anchor="w")
     ctk.CTkLabel(card, text=message, font=font(14), text_color=muted_color(),
                  justify="left", wraplength=360).pack(pady=6, padx=24, anchor="w")
@@ -38,7 +38,7 @@ def show_confirm_dialog(parent, title: str, message: str, ok_text: str = "ยื
     secondary_button(btn_frame, "ยกเลิก", on_cancel, width=110).pack(side="right", padx=(8, 0))
     ctk.CTkButton(btn_frame, text=ok_text, command=on_ok, width=110,
                   font=font(13, bold=True), fg_color=ok_color or DANGER,
-                  hover_color="#DC2626", corner_radius=8).pack(side="right")
+                  hover_color="#9A221C", corner_radius=8).pack(side="right")
 
     dialog.update_idletasks()
     w, h = dialog.winfo_reqwidth() + 40, dialog.winfo_reqheight() + 30

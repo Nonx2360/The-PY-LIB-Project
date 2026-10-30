@@ -39,14 +39,14 @@ class ScanWindow:
         hint.pack(pady=(0, 10))
 
         video_frame = ctk.CTkFrame(self.win, corner_radius=14,
-                                   border_width=2, border_color="#22C55E")
+                                   border_width=2, border_color="#276749")
         video_frame.pack(padx=24, pady=6, fill="both", expand=True)
         self.video_label = ctk.CTkLabel(video_frame, text="กำลังเปิดกล้อง...",
                                         font=font(16), text_color=muted_color())
         self.video_label.pack(fill="both", expand=True)
 
         self.status_label = ctk.CTkLabel(self.win, text="กำลังรอสแกน...",
-                                         font=font(15, bold=True), text_color="#F59E0B")
+                                         font=font(15, bold=True), text_color="#B45309")
         self.status_label.pack(pady=12)
 
         close_btn = ctk.CTkButton(self.win, text="ปิดหน้าต่าง", command=self.close,
@@ -57,7 +57,7 @@ class ScanWindow:
 
         self.cap = CameraService.get_camera()
         if self.cap is None:
-            self.status_label.configure(text="ไม่สามารถเปิดกล้องได้", text_color="#EF4444")
+            self.status_label.configure(text="ไม่สามารถเปิดกล้องได้", text_color="#B3261E")
             if self.on_error:
                 self.on_error("ไม่สามารถเปิดกล้องได้")
             self.win.after(1500, self.close)

@@ -7,51 +7,65 @@ import customtkinter as ctk
 
 from config.constants import FONTS_DIR
 
-# ---- palette (fixed accents) ----
-PRIMARY = "#2563EB"
-PRIMARY_HOVER = "#1D4ED8"
-PRIMARY_SOFT = "#DBEAFE"
-SUCCESS = "#22C55E"
-SUCCESS_SOFT = "#DCFCE7"
-WARNING = "#F59E0B"
-WARNING_SOFT = "#FEF3C7"
-DANGER = "#EF4444"
-DANGER_SOFT = "#FEE2E2"
-INFO = "#0EA5E9"
-INFO_SOFT = "#E0F2FE"
+# ---- palette - "ห้องอ่านหนังสือ" Reading Room ----
+# Primary carried from assets/logos/school_logo.png (petrol navy);
+# status colors are rubber-stamp inks on due-date cards.
+PRIMARY = "#1E4B63"
+PRIMARY_HOVER = "#173C50"
+PRIMARY_SOFT = "#E3ECF1"
+SUCCESS = "#276749"
+SUCCESS_HOVER = "#1E5237"
+SUCCESS_SOFT = "#E8F3EB"
+WARNING = "#B45309"          # marigold - the single accent, used sparingly
+WARNING_BRIGHT = "#F59E0B"
+WARNING_SOFT = "#FBF0DD"
+DANGER = "#B3261E"
+DANGER_HOVER = "#9A221C"
+DANGER_SOFT = "#F9E9E7"
+INFO = "#1E4B63"             # info collapses into the navy family
+INFO_SOFT = "#E3ECF1"
 
-SIDEBAR = "#0F172A"
-SIDEBAR_HOVER = "#1E293B"
+SIDEBAR = "#14374A"
+SIDEBAR_HOVER = "#102C3E"
 SIDEBAR_ACTIVE = PRIMARY
-SIDEBAR_TEXT = "#CBD5E1"
-SIDEBAR_MUTED = "#64748B"
+SIDEBAR_TEXT = "#A9BFCB"
+SIDEBAR_MUTED = "#7E97A5"
 
 # ---- theme-aware colors ----
-CONTENT_LIGHT = "#F1F5F9"
-CONTENT_DARK = "#0B1220"
+CONTENT_LIGHT = "#F6F5F1"    # warm near-white stationery paper
+CONTENT_DARK = "#0F1A23"
 CARD_LIGHT = "#FFFFFF"
-CARD_DARK = "#1E293B"
-TEXT_LIGHT = "#0F172A"
-TEXT_DARK = "#F8FAFC"
-MUTED_LIGHT = "#64748B"
-MUTED_DARK = "#94A3B8"
-BORDER_LIGHT = "#E2E8F0"
-BORDER_DARK = "#334155"
-INPUT_LIGHT = "#F8FAFC"
-INPUT_DARK = "#0F172A"
+CARD_DARK = "#182531"
+TEXT_LIGHT = "#20303B"
+TEXT_DARK = "#EDF3F6"
+MUTED_LIGHT = "#647782"
+MUTED_DARK = "#93A6B1"
+BORDER_LIGHT = "#E3E0D8"
+BORDER_DARK = "#2A3A46"
+INPUT_LIGHT = "#F8F7F3"
+INPUT_DARK = "#101B24"
+INPUT_BORDER_LIGHT = "#CFCBBF"
+INPUT_BORDER_DARK = "#33475A"
 
 # ---- fonts ----
 FONT = "Sarabun"
 FONT_BOLD = "Sarabun-Bold"
+FONT_DISPLAY = "Prompt SemiBold"      # headings / stat numbers / tiles
+FONT_DISPLAY_MED = "Prompt Medium"    # buttons
 FALLBACK_FONT = "Segoe UI"
+DISPLAY_OK = False                    # set by register_fonts()
+PROMPT_FILES = ("Prompt-Medium.ttf", "Prompt-SemiBold.ttf")
 
 
 def register_fonts():
-    """Load bundled Sarabun TTFs privately (FR_PRIVATE) so Tk can render Thai text."""
-    global FONT, FONT_BOLD
+    """Load bundled Sarabun + Prompt TTFs privately (FR_PRIVATE) so Tk can
+    render Thai text and Reading Room display type."""
+    global FONT, FONT_BOLD, FONT_DISPLAY, FONT_DISPLAY_MED, DISPLAY_OK
     if os.name != "nt":
+        DISPLAY_OK = True
         return
-    for name in ("Sarabun-Regular.ttf", "Sarabun-Bold.ttf"):
+    ttf_names = ("Sarabun-Regular.ttf", "Sarabun-Bold.ttf") + PROMPT_FILES
+    for name in ttf_names:
         path = os.path.abspath(os.path.join(FONTS_DIR, name))
         if os.path.exists(path):
             try:
@@ -68,9 +82,14 @@ def register_fonts():
             FONT = FALLBACK_FONT
         if "Sarabun-Bold" not in families:
             FONT_BOLD = FONT
+        DISPLAY_OK = FONT_DISPLAY in families and FONT_DISPLAY_MED in families
+        if not DISPLAY_OK:
+            FONT_DISPLAY = FONT_BOLD
+            FONT_DISPLAY_MED = FONT
     except Exception:
         FONT = FALLBACK_FONT
         FONT_BOLD = FALLBACK_FONT
+        DISPLAY_OK = False
 
 
 def is_light():
@@ -101,14 +120,28 @@ def input_bg():
     return INPUT_LIGHT if is_light() else INPUT_DARK
 
 
-def font(size=13, bold=False):
-    return ctk.CTkFont(family=FONT_BOLD if bold else FONT, size=size,
-                       weight="bold" if bold else "normal")
+def font(size=13, bold=False, display=False):
+    """Widget text.
+    display=True  -> Prompt display face (falls back to Sarabun bold if
+                     the bundled TTFs are missing).
+    display=False -> Sarabun body face.
+    """
+    if not display:
+        fam = FONT_BOLD if bold else FONT
+        return ctk.CTkFont(family=fam, size=size,
+                           weight="bold" if bold else "normal")
+    if DISPLAY_OK:
+        fam = FONT_DISPLAY if bold else FONT_DISPLAY_MED
+        weight = "normal"
+    else:
+        fam = FONT_BOLD if bold else FONT
+        weight = "bold" if bold else "normal"
+    return ctk.CTkFont(family=fam, size=size, weight=weight)
 
 
 # ---- widget builders ----
 def heading(parent, text, size=24):
-    return ctk.CTkLabel(parent, text=text, font=font(size, bold=True),
+    return ctk.CTkLabel(parent, text=text, font=font(size, bold=True, display=True),
                         text_color=text_color(), anchor="w")
 
 
@@ -129,12 +162,12 @@ def card(parent, **kwargs):
 
 
 def card_title(parent, text, size=17):
-    return ctk.CTkLabel(parent, text=text, font=font(size, bold=True),
+    return ctk.CTkLabel(parent, text=text, font=font(size, bold=True, display=True),
                         text_color=text_color(), anchor="w")
 
 
 def primary_button(parent, text, command, height=40, **kwargs):
-    kwargs.setdefault("font", font(14, bold=True))
+    kwargs.setdefault("font", font(15, display=True))
     return ctk.CTkButton(parent, text=text, command=command, height=height,
                          fg_color=PRIMARY, hover_color=PRIMARY_HOVER,
                          corner_radius=8, **kwargs)
@@ -162,44 +195,48 @@ def ghost_button(parent, text, command, height=36, **kwargs):
 def danger_button(parent, text, command, height=36, **kwargs):
     kwargs.setdefault("font", font(13, bold=True))
     return ctk.CTkButton(parent, text=text, command=command, height=height,
-                         fg_color=DANGER, hover_color="#DC2626",
+                         fg_color=DANGER, hover_color=DANGER_HOVER,
                          corner_radius=8, **kwargs)
 
 
 def success_button(parent, text, command, height=40, **kwargs):
-    kwargs.setdefault("font", font(14, bold=True))
+    kwargs.setdefault("font", font(15, display=True))
     return ctk.CTkButton(parent, text=text, command=command, height=height,
-                         fg_color=SUCCESS, hover_color="#16A34A",
+                         fg_color=SUCCESS, hover_color=SUCCESS_HOVER,
                          corner_radius=8, **kwargs)
 
 
 def badge(parent, text, color, soft_color):
+    """Rubber-stamp style status: 2px ink border on a tinted wash."""
     lbl = ctk.CTkLabel(parent, text=text, font=font(12, bold=True),
                        fg_color=soft_color, text_color=color,
-                       corner_radius=6, padx=10, pady=2)
+                       corner_radius=4, border_width=2, border_color=color,
+                       padx=10, pady=2)
     return lbl
 
 
 def badge_green(parent, text):
-    return badge(parent, text, "#15803D" if is_light() else "#4ADE80", SUCCESS_SOFT)
+    return badge(parent, text, "#276749" if is_light() else "#7FD4A3", SUCCESS_SOFT)
 
 
 def badge_red(parent, text):
-    return badge(parent, text, "#B91C1C" if is_light() else "#F87171", DANGER_SOFT)
+    return badge(parent, text, "#9A221C" if is_light() else "#EFA6A0", DANGER_SOFT)
 
 
 def badge_amber(parent, text):
-    return badge(parent, text, "#B45309" if is_light() else "#FBBF24", WARNING_SOFT)
+    return badge(parent, text, "#8A4B06" if is_light() else "#E9B57C", WARNING_SOFT)
 
 
 def badge_blue(parent, text):
-    return badge(parent, text, "#0369A1" if is_light() else "#38BDF8", INFO_SOFT)
+    return badge(parent, text, PRIMARY if is_light() else "#9DC0D2", INFO_SOFT)
 
 
 def entry(parent, placeholder="", width=280, **kwargs):
     kwargs.setdefault("placeholder_text", placeholder)
     e = ctk.CTkEntry(parent, width=width,
-                     font=font(14), fg_color=input_bg(), border_color=border_color(),
+                     font=font(14),
+                     fg_color=input_bg(),
+                     border_color=INPUT_BORDER_LIGHT if is_light() else INPUT_BORDER_DARK,
                      corner_radius=8, **kwargs)
     return e
 

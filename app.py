@@ -99,7 +99,8 @@ class LibraryApp(ctk.CTk):
         # Brand
         brand = ctk.CTkFrame(self.nav_frame, fg_color="transparent")
         brand.pack(fill="x", padx=20, pady=(24, 8))
-        ctk.CTkLabel(brand, text="THE PY-LIB", font=theme.font(22, bold=True),
+        ctk.CTkLabel(brand, text="THE PY-LIB",
+                     font=theme.font(22, bold=True, display=True),
                      text_color="#FFFFFF", anchor="w").pack(fill="x")
         ctk.CTkLabel(brand, text="ระบบห้องสมุดอัจฉริยะ", font=theme.font(12),
                      text_color=theme.SIDEBAR_MUTED, anchor="w").pack(fill="x")
@@ -122,7 +123,8 @@ class LibraryApp(ctk.CTk):
         self.header_frame.pack(side="top", fill="x")
         self.header_frame.pack_propagate(False)
 
-        self.header_title = ctk.CTkLabel(self.header_frame, text="", font=theme.font(19, bold=True),
+        self.header_title = ctk.CTkLabel(self.header_frame, text="",
+                                         font=theme.font(19, bold=True, display=True),
                                          text_color=theme.text_color(), anchor="w")
         self.header_title.pack(side="left", padx=24)
 

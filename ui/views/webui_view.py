@@ -43,7 +43,7 @@ class WebUIView(ctk.CTkFrame):
         body.pack(fill="x", padx=18, pady=(0, 18))
 
         self._status_label = ctk.CTkLabel(body, text="● ปิดอยู่", font=theme.font(15, bold=True),
-                                          text_color="#EF4444")
+                                          text_color="#B3261E")
         self._status_label.pack(anchor="w", pady=(0, 6))
 
         self._url_label = ctk.CTkLabel(body, text="", font=theme.font(13),
@@ -53,15 +53,15 @@ class WebUIView(ctk.CTkFrame):
         btn_row = ctk.CTkFrame(body, fg_color="transparent")
         btn_row.pack(fill="x")
 
-        self._start_btn = theme.primary_button(btn_row, "▶  เริ่ม Web UI", self._start_server,
-                                               height=40, width=160)
+        self._start_btn = theme.primary_button(btn_row, "เริ่ม Web UI", self._start_server,
+                                               height=40, width=150)
         self._start_btn.pack(side="left", padx=(0, 8))
 
-        self._stop_btn = theme.danger_button(btn_row, "■  หยุด", self._stop_server,
-                                             height=40, width=120, state="disabled")
+        self._stop_btn = theme.danger_button(btn_row, "หยุด", self._stop_server,
+                                             height=40, width=110, state="disabled")
         self._stop_btn.pack(side="left", padx=(0, 8))
 
-        self._open_btn = theme.secondary_button(btn_row, "🌐  เปิดในเบราว์เซอร์",
+        self._open_btn = theme.secondary_button(btn_row, "เปิดในเบราว์เซอร์",
                                                 self._open_browser, height=40, width=180,
                                                 state="disabled")
         self._open_btn.pack(side="left")
@@ -105,7 +105,7 @@ class WebUIView(ctk.CTkFrame):
             self._thread.start()
             self._running = True
 
-            self._status_label.configure(text="● กำลังทำงาน", text_color="#22C55E")
+            self._status_label.configure(text="● กำลังทำงาน", text_color="#276749")
             self._url_label.configure(text=f"WebUI Running at : http://{self._browse_host()}:{self._port}")
             self._start_btn.configure(state="disabled")
             self._stop_btn.configure(state="normal")
@@ -134,7 +134,7 @@ class WebUIView(ctk.CTkFrame):
 
             threading.Thread(target=_shutdown, args=(server,), daemon=True).start()
         self._running = False
-        self._status_label.configure(text="● ปิดอยู่", text_color="#EF4444")
+        self._status_label.configure(text="● ปิดอยู่", text_color="#B3261E")
         self._url_label.configure(text="")
         self._start_btn.configure(state="normal")
         self._stop_btn.configure(state="disabled")

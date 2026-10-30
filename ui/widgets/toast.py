@@ -8,11 +8,11 @@ from ui.theme import font
 def show_toast(parent, message, color="green"):
     """Floating toast at the bottom-center of the main window; auto-dismisses."""
     colors = {
-        "green": ("#16A34A", "#DCFCE7"),
-        "red": ("#DC2626", "#FEE2E2"),
-        "amber": ("#D97706", "#FEF3C7"),
-        "blue": ("#0284C7", "#E0F2FE"),
-        "dark": ("#334155", "#E2E8F0"),
+        "green": ("#276749", "#E8F3EB"),
+        "red": ("#B3261E", "#F9E9E7"),
+        "amber": ("#B45309", "#FBF0DD"),
+        "blue": ("#1E4B63", "#E3ECF1"),
+        "dark": ("#14374A", "#E3E0D8"),
     }
     accent, soft = colors.get(color, colors["dark"])
     try:
