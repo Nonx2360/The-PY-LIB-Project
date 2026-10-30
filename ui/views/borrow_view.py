@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 
 import ui.theme as theme
 from config import settings
+from config.constants import BOOK_STATUS_AVAILABLE
 from db.repositories.book_repo import BookRepository
 from db.repositories.borrow_repo import BorrowRepository, BorrowError
 from db.repositories.member_repo import MemberRepository
@@ -166,7 +167,7 @@ class BorrowView(ctk.CTkFrame):
             self.borrow_button.pack_forget()
             show_toast(self, "ไม่พบหนังสือในระบบ", "red")
             return
-        if book[3] != "ว่าง":
+        if book[3] != BOOK_STATUS_AVAILABLE:
             self.book_info_label.configure(text=f"หนังสือ '{book[2]}' ไม่พร้อมให้ยืม (สถานะ: {book[3]})")
             self.current_book = None
             self.borrow_button.pack_forget()

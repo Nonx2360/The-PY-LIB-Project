@@ -7,6 +7,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash
 from config import settings
+from config.constants import (BOOK_STATUS_AVAILABLE, BOOK_STATUS_BORROWED,
+                              BOOK_STATUS_RETIRED)
 from config.env_store import ensure_secrets
 from db.schema import init_db
 from db.repositories.member_repo import MemberRepository
@@ -190,6 +192,11 @@ def create_app():
         if not all([name, grade, number]):
             flash("กรุณากรอกข้อมูลให้ครบ", "error")
             return redirect(url_for("members"))
+        if member_repo.find_by_badge(grade, number):
+            flash(f"ชั้น {grade} มีสมาชิกเลขที่ {number} อยู่แล้ว "
+                  "ไม่สามารถลงทะเบียนซ้ำได้ (เลขที่ต้องไม่ซ้ำภายในชั้นเดียวกัน)",
+                  "error")
+            return redirect(url_for("members"))
         reg_date = datetime.now().strftime("%Y-%m-%d")
         exp_date = (datetime.now() + timedelta(days=settings.get("member_expiry_days"))).strftime("%Y-%m-%d")
         qr_data = f"{name}|{grade}|{number}|{reg_date}|{exp_date}"
@@ -263,7 +270,7 @@ def create_app():
         if existing:
             flash(f"รหัสหนังสือ '{code}' มีอยู่แล้ว", "error")
             return redirect(url_for("books"))
-        book_repo.add(code, title, status="ว่าง")
+        book_repo.add(code, title, status=BOOK_STATUS_AVAILABLE)
         logger.info("Web: book added: code=%s", code)
         flash("เพิ่มหนังสือสำเร็จ", "success")
         return redirect(url_for("books"))
@@ -275,7 +282,7 @@ def create_app():
         if book is None:
             flash("ไม่พบหนังสือในระบบ", "error")
             return redirect(url_for("books"))
-        if book[0] == "หยุดให้บริการ":
+        if book[0] == BOOK_STATUS_RETIRED:
             # Deliberate two-step purge: a RETIRED copy is removed together
             # with its borrow_log rows inside ONE transaction. The librarian
             # chose withdrawal first; this path makes the history loss an
@@ -325,11 +332,11 @@ def create_app():
         book = book_repo.fetchone("SELECT status FROM books WHERE id=?", (bid,))
         if book is None:
             flash("ไม่พบหนังสือในระบบ", "error")
-        elif book[0] == "ว่าง":
-            book_repo.update_status(bid, "หยุดให้บริการ")
+        elif book[0] == BOOK_STATUS_AVAILABLE:
+            book_repo.update_status(bid, BOOK_STATUS_RETIRED)
             logger.info("Web: book retired: id=%s", bid)
             flash("หยุดให้บริการแล้ว — ประวัติการยืมยังถูกเก็บไว้", "success")
-        elif book[0] == "หยุดให้บริการ":
+        elif book[0] == BOOK_STATUS_RETIRED:
             flash("หนังสือเล่มนี้หยุดให้บริการอยู่แล้ว", "error")
         else:
             flash("หนังสือกำลังถูกยืมอยู่ กรุณารอคืนก่อน แล้วจึงหยุดให้บริการ", "error")
@@ -338,12 +345,12 @@ def create_app():
     @app.route("/books/<int:bid>/restore", methods=["POST"])
     @login_required
     def book_restore(bid):
-        """Put a retired book back into circulation (status ว่าง)."""
+        """Put a retired book back into circulation (status BOOK_STATUS_AVAILABLE)."""
         book = book_repo.fetchone("SELECT status FROM books WHERE id=?", (bid,))
         if book is None:
             flash("ไม่พบหนังสือในระบบ", "error")
-        elif book[0] == "หยุดให้บริการ":
-            book_repo.update_status(bid, "ว่าง")
+        elif book[0] == BOOK_STATUS_RETIRED:
+            book_repo.update_status(bid, BOOK_STATUS_AVAILABLE)
             logger.info("Web: book restored: id=%s", bid)
             flash("หนังสือกลับมาให้บริการตามปกติแล้ว", "success")
         else:
@@ -396,7 +403,8 @@ def create_app():
             enriched.append({"id": mid, "name": m[1], "grade": m[2], "number": m[3],
                              "active_borrows": active, "overdue_borrows": overdue})
         books_ = book_repo.fetchall(
-            "SELECT id, code, title FROM books WHERE status='ว่าง' ORDER BY title")
+            "SELECT id, code, title FROM books WHERE status = ? ORDER BY title",
+            (BOOK_STATUS_AVAILABLE,))
         books_ = _rows_to_dicts(books_, ["id", "code", "title"])
         default_due = (datetime.now() + timedelta(days=settings.get("default_loan_days"))).strftime("%Y-%m-%d")
         return render_template("borrow.html", members=enriched, books=books_,

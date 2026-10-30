@@ -20,3 +20,12 @@ COLORS = {
     'text': '#000000',
     'error': '#ff0000'
 }
+
+# ------------------------- book circulation states -------------------------
+# Stored verbatim in books.status. The Thai strings ARE the storage format:
+# legacy databases and every borrow/return/retire flow match on the exact
+# wording, so they must never be edited casually. Use these constants
+# instead of string literals in code.
+BOOK_STATUS_AVAILABLE = 'ว่าง'
+BOOK_STATUS_BORROWED = 'ยืมแล้ว'
+BOOK_STATUS_RETIRED = 'หยุดให้บริการ'

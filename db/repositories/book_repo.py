@@ -1,4 +1,5 @@
 # db/repositories/book_repo.py
+from config.constants import BOOK_STATUS_AVAILABLE
 from .base_repo import BaseRepository
 
 class BookRepository(BaseRepository):
@@ -8,7 +9,7 @@ class BookRepository(BaseRepository):
     def get_by_code(self, code):
         return self.fetchone("SELECT * FROM books WHERE code = ?", (code,))
 
-    def add(self, code, title, status='ว่าง'):
+    def add(self, code, title, status=BOOK_STATUS_AVAILABLE):
         query = "INSERT INTO books (code, title, status) VALUES (?, ?, ?)"
         return self.execute(query, (code, title, status))
 

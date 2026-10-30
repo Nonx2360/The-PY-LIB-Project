@@ -1,7 +1,8 @@
 # db/repositories/borrow_repo.py
 import sqlite3
 
-from config import settings
+import config.settings as settings
+from config.constants import BOOK_STATUS_AVAILABLE, BOOK_STATUS_BORROWED
 from .base_repo import BaseRepository
 
 
@@ -39,9 +40,10 @@ class BorrowRepository(BaseRepository):
         """Atomically lend one book.
 
         Guarantees, enforced inside a single IMMEDIATE transaction:
-          * the book exists and is 'ว่าง' — its status flips to 'ยืมแล้ว'
-            only via a conditional UPDATE (rowcount == 1), so concurrent
-            borrowers cannot double-lend;
+          * the book exists and is BOOK_STATUS_AVAILABLE ('ว่าง') — its
+            status flips to BOOK_STATUS_BORROWED ('ยืมแล้ว') only via a
+            conditional UPDATE (rowcount == 1), so concurrent borrowers
+            cannot double-lend;
           * member has no overdue loan and is below max_books_per_member;
           * on any failure (rule violated or FK/integrity error) the
             transaction rolls back — no partial state (book status or log).
@@ -53,12 +55,12 @@ class BorrowRepository(BaseRepository):
                 "SELECT status FROM books WHERE id = ?", (book_id,)).fetchone()
             if row is None:
                 raise BorrowError("ไม่พบหนังสือในระบบ")
-            if row[0] != "ว่าง":
+            if row[0] != BOOK_STATUS_AVAILABLE:
                 raise BorrowError(f"หนังสือเล่มนี้ไม่พร้อมให้ยืม (สถานะ: {row[0]})")
 
             cur = conn.execute(
-                "UPDATE books SET status = 'ยืมแล้ว' WHERE id = ? AND status = 'ว่าง'",
-                (book_id,))
+                "UPDATE books SET status = ? WHERE id = ? AND status = ?",
+                (BOOK_STATUS_BORROWED, book_id, BOOK_STATUS_AVAILABLE))
             if cur.rowcount != 1:
                 raise BorrowError(f"หนังสือเล่มนี้ไม่พร้อมให้ยืม (สถานะ: {row[0]})")
 
@@ -93,7 +95,8 @@ class BorrowRepository(BaseRepository):
         The book identifier is taken from the borrow_log row itself — client
         data is never trusted. Guarantees:
           * unknown/non-open record -> BorrowError, nothing changes;
-          * borrow_log.returned=1 and books.status='ว่าง' applied together.
+          * borrow_log.returned=1 and books.status=BOOK_STATUS_AVAILABLE
+            ('ว่าง') applied together.
         """
         def _tx(conn):
             row = conn.execute(
@@ -105,7 +108,8 @@ class BorrowRepository(BaseRepository):
             conn.execute(
                 "UPDATE borrow_log SET returned = 1 WHERE id = ?", (record_id,))
             conn.execute(
-                "UPDATE books SET status = 'ว่าง' WHERE id = ?", (book_id,))
+                "UPDATE books SET status = ? WHERE id = ?",
+                (BOOK_STATUS_AVAILABLE, book_id))
             return book_id
 
         try:

@@ -4,6 +4,8 @@ import customtkinter as ctk
 from tkinter import filedialog
 
 import ui.theme as theme
+from config.constants import (BOOK_STATUS_AVAILABLE, BOOK_STATUS_BORROWED,
+                              BOOK_STATUS_RETIRED)
 from db.repositories.base_repo import BaseRepository
 from db.repositories.book_repo import BookRepository
 from services.excel_service import ExcelService
@@ -117,19 +119,19 @@ class BookView(ctk.CTkFrame):
             row=1, column=1, sticky="w", pady=(0, 8))
 
         status = (b[3] or "").strip()
-        status_badge = (theme.badge_green(row, "ว่าง") if status in ("ว่าง", "Available", "")
-                        else theme.badge_blue(row, "หยุดให้บริการ") if status == "หยุดให้บริการ"
-                        else theme.badge_red(row, "ยืมแล้ว") if "ยืม" in status
+        status_badge = (theme.badge_green(row, BOOK_STATUS_AVAILABLE) if status in (BOOK_STATUS_AVAILABLE, "Available", "")
+                        else theme.badge_blue(row, BOOK_STATUS_RETIRED) if status == BOOK_STATUS_RETIRED
+                        else theme.badge_red(row, BOOK_STATUS_BORROWED) if "ยืม" in status
                         else theme.badge_amber(row, status))
         status_badge.grid(row=0, column=2, rowspan=2, padx=6)
 
-        if status == "ว่าง":
+        if status == BOOK_STATUS_AVAILABLE:
             theme.ghost_button(row, "หยุด", lambda bb=b: self._retire_book(bb),
                                width=56, height=30).grid(row=0, column=3, rowspan=2, padx=(6, 0))
             theme.ghost_button(row, "ลบ", lambda bb=b: self._delete_book(bb),
                                width=56, height=30, text_color=theme.DANGER).grid(
                 row=0, column=4, rowspan=2, padx=(6, 10))
-        elif status == "หยุดให้บริการ":
+        elif status == BOOK_STATUS_RETIRED:
             theme.ghost_button(row, "กลับมา", lambda bb=b: self._restore_book(bb),
                                width=56, height=30).grid(row=0, column=3, rowspan=2, padx=(6, 0))
             theme.ghost_button(row, "ลบถาวร", lambda bb=b: self._delete_book(bb),
@@ -151,7 +153,7 @@ class BookView(ctk.CTkFrame):
             show_toast(self, f"รหัส {code} มีอยู่แล้วในระบบ", "red")
             return
         try:
-            self.repo.add(code, title, status="ว่าง")
+            self.repo.add(code, title, status=BOOK_STATUS_AVAILABLE)
             show_toast(self, f"เพิ่มหนังสือสำเร็จ: {title}", "green")
             self.code_entry.delete(0, "end")
             self.title_entry.delete(0, "end")

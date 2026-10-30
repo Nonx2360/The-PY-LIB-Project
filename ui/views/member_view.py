@@ -145,6 +145,9 @@ class MemberView(ctk.CTkFrame):
         if not all([name, grade, number]):
             show_toast(self, "กรุณากรอกข้อมูลให้ครบ", "red")
             return
+        if self.repo.find_by_badge(grade, number):
+            show_toast(self, f"ชั้น {grade} มีสมาชิกเลขที่ {number} อยู่แล้ว", "red")
+            return
 
         reg_date = datetime.now().strftime("%Y-%m-%d")
         exp_date = (datetime.now() + timedelta(days=settings.get("member_expiry_days"))).strftime("%Y-%m-%d")
