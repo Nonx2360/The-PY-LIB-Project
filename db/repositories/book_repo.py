@@ -8,7 +8,7 @@ class BookRepository(BaseRepository):
     def get_by_code(self, code):
         return self.fetchone("SELECT * FROM books WHERE code = ?", (code,))
         
-    def add(self, code, title, status='Available'):
+    def add(self, code, title, status='ว่าง'):
         query = "INSERT INTO books (code, title, status) VALUES (?, ?, ?)"
         return self.execute(query, (code, title, status))
         

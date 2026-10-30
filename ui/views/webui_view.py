@@ -2,6 +2,7 @@
 import threading
 import webbrowser
 import customtkinter as ctk
+from werkzeug.serving import make_server
 
 import ui.theme as theme
 from core.logger import logger
@@ -90,13 +91,9 @@ class WebUIView(ctk.CTkFrame):
             from web.app import create_app
             app = create_app()
 
-            def run():
-                try:
-                    app.run(host="0.0.0.0", port=self._port, debug=False, use_reloader=False)
-                except OSError as e:
-                    logger.error(f"Web UI port {self._port} error: {e}")
-
-            self._thread = threading.Thread(target=run, daemon=True)
+            # make_server (instead of app.run) so the server can be shut down later
+            self._server = make_server("0.0.0.0", self._port, app, threaded=True)
+            self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
             self._thread.start()
             self._running = True
 
@@ -109,12 +106,25 @@ class WebUIView(ctk.CTkFrame):
             logger.info(f"Web UI started on port {self._port}")
             show_toast(self, f"Web UI เริ่มทำงานแล้ว — http://127.0.0.1:{self._port}", "green")
         except Exception as e:
+            self._server = None
             logger.error(f"Failed to start Web UI: {e}", exc_info=True)
             show_toast(self, f"ไม่สามารถเริ่ม Web UI: {e}", "red")
 
     def _stop_server(self):
         if not self._running:
             return
+        server = self._server
+        self._server = None
+        if server is not None:
+            # shutdown() must not be called from the serving thread — park it on a worker
+            def _shutdown(srv):
+                try:
+                    srv.shutdown()
+                    srv.server_close()
+                except Exception as e:
+                    logger.warning(f"Web UI shutdown error: {e}")
+
+            threading.Thread(target=_shutdown, args=(server,), daemon=True).start()
         self._running = False
         self._status_label.configure(text="● ปิดอยู่", text_color="#EF4444")
         self._url_label.configure(text="")

@@ -113,9 +113,11 @@ def create_app():
         os.makedirs("assets/qrcodes", exist_ok=True)
         os.makedirs("assets/cards", exist_ok=True)
         encrypted = QRService.generate_qr(qr_data, qr_filename)
-        card_pdf = f"assets/cards/{uuid.uuid4()}.pdf"
-        PDFService.generate_card(name, grade, number, reg_date, exp_date, encrypted, card_pdf)
-        member_repo.add(name, grade, number, reg_date, exp_date, "qr", qr_filename)
+        member_id = member_repo.add(name, grade, number, reg_date, exp_date, encrypted, qr_filename)
+        card_pdf = f"assets/cards/member_{member_id}.pdf"
+        PDFService.generate_member_card_pdf(name, number,
+                                            "assets/logos/school_logo.png",
+                                            card_pdf, encrypted)
         logger.info(f"Web: member added: {name}")
         flash("เพิ่มสมาชิกสำเร็จ", "success")
         return redirect(url_for("members"))
