@@ -207,12 +207,18 @@ def success_button(parent, text, command, height=40, **kwargs):
 
 
 def badge(parent, text, color, soft_color):
-    """Rubber-stamp style status: 2px ink border on a tinted wash."""
-    lbl = ctk.CTkLabel(parent, text=text, font=font(12, bold=True),
-                       fg_color=soft_color, text_color=color,
-                       corner_radius=4, border_width=2, border_color=color,
-                       padx=10, pady=2)
-    return lbl
+    """Rubber-stamp style status: 2px ink border on a tinted wash.
+
+    CTkLabel has no border_* arguments (they exist on frames), so the
+    stamp is a CTkFrame shell that draws the border, with a transparent
+    label inside. Returns the shell; callers may pack/grid it as before.
+    """
+    shell = ctk.CTkFrame(parent, fg_color=soft_color, border_width=2,
+                         border_color=color, corner_radius=4)
+    ctk.CTkLabel(shell, text=text, font=font(12, bold=True),
+                 fg_color="transparent", text_color=color,
+                 padx=10, pady=2).pack()
+    return shell
 
 
 def badge_green(parent, text):
