@@ -221,13 +221,33 @@ def create_app():
     @app.route("/members/<int:mid>/delete", methods=["POST"])
     @login_required
     def member_delete(mid):
+        # borrow_log/access_log carry FOREIGN KEYs to members: deleting a
+        # member with history would corrupt library records AND crash as 500.
+        borrowed = borrow_repo.fetchone(
+            "SELECT COUNT(*) FROM borrow_log WHERE member_id=?", (mid,))[0]
+        if borrowed > 0:
+            flash("ไม่สามารถลบได้ — สมาชิกนี้มีประวัติการยืมหนังสือ "
+                  "ระบบเก็บประวัติไว้เพื่อความถูกต้องของข้อมูล", "error")
+            return redirect(url_for("members"))
+        accessed = access_repo.fetchone(
+            "SELECT COUNT(*) FROM access_log WHERE member_id=?", (mid,))[0]
+        if accessed > 0:
+            flash("ไม่สามารถลบได้ — สมาชิกนี้มีประวัติการเข้าออกห้องสมุด", "error")
+            return redirect(url_for("members"))
         row = member_repo.fetchone("SELECT qrcode_path FROM members WHERE id=?", (mid,))
+        try:
+            member_repo.delete(mid)
+        except sqlite3.IntegrityError:
+            logger.info("web member delete: DB refused id=%s", mid)
+            flash("ลบไม่สำเร็จ — ข้อมูลยังถูกอ้างอิงจากประวัติการใช้งาน", "error")
+            return redirect(url_for("members"))
+        # remove card artifacts only AFTER the row is really gone, so a failed
+        # delete never loses the QR image of a member that still exists
         if row and row[0]:
             try:
                 os.remove(row[0])
             except OSError:
                 pass
-        member_repo.delete(mid)
         logger.info("Web: member deleted: id=%s", mid)
         flash("ลบสมาชิกสำเร็จ", "success")
         return redirect(url_for("members"))
@@ -266,7 +286,21 @@ def create_app():
         if active > 0:
             flash("ไม่สามารถลบได้ — มีการยืมหนังสือเล่มนี้อยู่", "error")
             return redirect(url_for("books"))
-        book_repo.delete(bid)
+        # borrow_log -> books is a FOREIGN KEY (data-integrity phase): a book
+        # with returned history may never be deleted. Refuse with a Thai
+        # message instead of letting sqlite3.IntegrityError surface as a 500.
+        history = borrow_repo.fetchone(
+            "SELECT COUNT(*) FROM borrow_log WHERE book_id=?", (bid,))[0]
+        if history > 0:
+            flash("ไม่สามารถลบได้ — หนังสือเล่มนี้มีประวัติการยืม "
+                  "ระบบเก็บประวัติไว้เพื่อความถูกต้องของข้อมูล", "error")
+            return redirect(url_for("books"))
+        try:
+            book_repo.delete(bid)
+        except sqlite3.IntegrityError:
+            logger.info("web book delete: DB refused id=%s", bid)
+            flash("ลบไม่สำเร็จ — ข้อมูลยังถูกอ้างอิงจากประวัติการใช้งาน", "error")
+            return redirect(url_for("books"))
         logger.info("Web: book deleted: id=%s", bid)
         flash("ลบหนังสือสำเร็จ", "success")
         return redirect(url_for("books"))

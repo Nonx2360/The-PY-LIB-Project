@@ -152,6 +152,14 @@ class BookView(ctk.CTkFrame):
         if active:
             show_toast(self, "ไม่สามารถลบหนังสือที่กำลังถูกยืมอยู่ได้", "red")
             return
+        # borrow_log -> books is a FOREIGN KEY: books with borrow history
+        # cannot be deleted — refuse clearly instead of a constraint error
+        history = self.base.fetchone(
+            "SELECT id FROM borrow_log WHERE book_id = ? LIMIT 1", (book[0],))
+        if history:
+            show_toast(self, "ไม่สามารถลบได้ — หนังสือเล่มนี้มีประวัติการยืม "
+                             "ระบบเก็บประวัติไว้เพื่อความถูกต้องของข้อมูล", "red")
+            return
         if not show_confirm_dialog(self, "ยืนยันการลบ",
                                    f"ลบหนังสือ '{book[2]}' (รหัส {book[1]}) ใช่หรือไม่?"):
             return
@@ -161,7 +169,7 @@ class BookView(ctk.CTkFrame):
             self._display_books()
         except Exception as e:
             logger.error(f"delete_book error: {e}", exc_info=True)
-            show_toast(self, f"เกิดข้อผิดพลาด: {e}", "red")
+            show_toast(self, "ลบไม่สำเร็จ — ข้อมูลยังถูกอ้างอิงจากประวัติการใช้งาน", "red")
 
     def _export_template(self):
         try:

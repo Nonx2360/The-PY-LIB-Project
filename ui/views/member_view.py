@@ -235,15 +235,30 @@ class MemberView(ctk.CTkFrame):
             show_toast(self, f"ไม่สามารถเปิดบัตรได้: {e}", "red")
 
     def _delete_member(self, member):
+        # borrow_log/access_log carry FOREIGN KEYs to members: a member with
+        # history must be kept so library records stay complete
+        borrowed = self.repo.fetchone(
+            "SELECT id FROM borrow_log WHERE member_id = ? LIMIT 1", (member[0],))
+        if borrowed:
+            show_toast(self, "ไม่สามารถลบได้ — สมาชิกนี้มีประวัติการยืมหนังสือ "
+                             "ระบบเก็บประวัติไว้เพื่อความถูกต้องของข้อมูล", "red")
+            return
+        accessed = self.repo.fetchone(
+            "SELECT id FROM access_log WHERE member_id = ? LIMIT 1", (member[0],))
+        if accessed:
+            show_toast(self, "ไม่สามารถลบได้ — สมาชิกนี้มีประวัติการเข้าออกห้องสมุด", "red")
+            return
         if not show_confirm_dialog(self, "ยืนยันการลบ",
                                    f"ลบสมาชิก '{member[1]}' ใช่หรือไม่?\nการกระทำนี้ไม่สามารถย้อนกลับได้"):
             return
         try:
+            # delete the row FIRST; remove the QR image only afterwards so a
+            # failed delete never destroys a card of a member that still exists
+            self.repo.delete(member[0])
             if member[7] and os.path.exists(member[7]):
                 os.remove(member[7])
-            self.repo.delete(member[0])
             show_toast(self, "ลบสมาชิกสำเร็จ", "green")
             self._display_members()
         except Exception as e:
             logger.error(f"delete_member error: {e}", exc_info=True)
-            show_toast(self, f"เกิดข้อผิดพลาด: {e}", "red")
+            show_toast(self, "ลบไม่สำเร็จ — ข้อมูลถูกอ้างอิงจากประวัติการใช้งาน", "red")

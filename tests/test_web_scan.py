@@ -35,6 +35,11 @@ class TestScanResolve(unittest.TestCase):
         web_app_mod.DB_PATH = _env.db_path  # login uses a module-level binding
         cls._orig_settings_file = settings_mod.SETTINGS_FILE
         settings_mod.SETTINGS_FILE = os.path.join(_env.dir, "settings.json")
+        # QR/card artifacts are written relative to CWD — chdir into the temp
+        # env so member-add tests never touch the real assets/ folders
+        cls._orig_cwd = os.getcwd()
+        os.chdir(_env.dir)
+        harness.stage_static_assets(_env.dir)
         cls.app = web_app_mod.create_app()
         cls.client = cls.app.test_client()
         cls._login()
@@ -43,6 +48,7 @@ class TestScanResolve(unittest.TestCase):
     def tearDownClass(cls):
         from config import settings as settings_mod
         settings_mod.SETTINGS_FILE = cls._orig_settings_file
+        os.chdir(cls._orig_cwd)
         _env.restore()
         harness.cleanup(_env.dir)
 
