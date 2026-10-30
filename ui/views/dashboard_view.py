@@ -11,6 +11,13 @@ class DashboardView(ctk.CTkFrame):
         self.nav = nav
         self.base = BaseRepository()
         self._resizable_labels = []
+        # resize handling: fonts are built once and shared; Configure events
+        # are filtered (moves) and coalesced (drags) so text is relaid out
+        # at most a few times per second instead of once per event pixel.
+        self._font_small = theme.font(15, bold=True, display=True)
+        self._font_large = theme.font(17, bold=True, display=True)
+        self._last_width = None
+        self._resize_job = None
         self._build()
 
     def _build(self):
@@ -79,7 +86,8 @@ class DashboardView(ctk.CTkFrame):
             ctk.CTkLabel(inner, text=desc, font=theme.font(12),
                          text_color=theme.muted_color(), anchor="w").pack(anchor="w")
 
-        self.winfo_toplevel().bind("<Configure>", self._on_resize)
+        # bind with add="+" so existing toplevel bindings survive
+        self.winfo_toplevel().bind("<Configure>", self._on_resize, add="+")
 
     def _count(self, query):
         try:
@@ -89,9 +97,38 @@ class DashboardView(ctk.CTkFrame):
             return 0
 
     def _on_resize(self, event):
+        """Filter + debounce Configure storms.
+
+        - Moving the window fires <Configure> with an unchanged width: skip.
+        - Drag-resizing fires per pixel: schedule ONE coalesced relayout.
+        """
         try:
-            size = 15 if event.width < 1200 else 17
-            for lbl in self._resizable_labels:
-                lbl.configure(font=theme.font(size, bold=True))
+            top = self.winfo_toplevel()
         except Exception:
-            pass
+            return
+        if event.widget is not top:
+            return
+        width = event.width
+        if width == self._last_width:
+            return
+        self._last_width = width
+        if self._resize_job is not None:
+            try:
+                self.after_cancel(self._resize_job)
+            except Exception:
+                pass
+        self._resize_job = self.after(140, lambda: self._apply_fonts(width))
+
+    def _apply_fonts(self, width):
+        self._resize_job = None
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        shared = self._font_small if width < 1200 else self._font_large
+        for lbl in self._resizable_labels:
+            try:
+                lbl.configure(font=shared)
+            except Exception:
+                pass
