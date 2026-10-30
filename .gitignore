@@ -7,3 +7,4 @@ ui_preview/
 backups/
 db/INITIAL_ADMIN_PASSWORD.txt
 debug.log
+/.opencode
