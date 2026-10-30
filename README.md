@@ -27,6 +27,13 @@
 - หยุดให้บริการ/กลับมา และลบถาวรแบบ 2 ขั้นตอน (retire → purge) พร้อมเก็บอย่างปลอดภัย
 - SVG icons (Lucide), School logo, Search/filter ทุกหน้า
 - Responsive design, รองรับ Light/Dark mode
+- Frontend stack vendored ในเครื่อง (ทำงานได้แม้ไม่มีอินเทอร์เน็ต) — ดู `web/static/vendor/README.md`:
+  - **SweetAlert2** — กล่องยืนยัน/แจ้งเตือนธีมเดียวกับระบบ, flash messages เป็น toast
+  - **HTMX** — ค้นหา/กรองหนังสือ (รหัส/ชื่อ/สถานะ), สมาชิก, ประวัติ แบบ server-side โดยไม่โหลดหน้าใหม่
+  - **Alpine.js** — ล็อกสถานะหน้ายืม (ค้างส่ง/ครบจำนวน) ประเมินทันทีในเบราว์เซอร์
+  - **Chart.js** — แดชบอร์ด: การยืม 14 วันล่าสุด, เข้าออก 7 วันล่าสุด, สัดส่วนสถานะหนังสือ (`/api/analytics`)
+  - **Flatpickr (th)** — ปฏิทินเลือกกำหนดคืน พร้อมปุ่มด่วน 7/14/21/30 วัน
+  - ลำดับโหลด: sweetalert2 → htmx → ui.js → alpine (สำคัญ อย่าสลับ)
 
 ### ความปลอดภัย
 - ข้อมูล QR เข้ารหัสแบบ AEAD **AES-256-GCM (`v2:`)** และยังถอดรหัสการ์ดเก่าแบบ AES-256-CBC อย่างเข้มงวด (strict legacy fallback)
@@ -145,25 +152,33 @@ THE-PY-LIB/
 │       ├── scan_window.py       # Shared camera QR scan window
 │       └── pdf_viewer.py        # Built-in PDF viewer (PyMuPDF)
 ├── web/
-│   ├── app.py                   # Flask web application (routes + guards)
-│   ├── csrf.py                  # Per-session CSRF tokens (constant-time compare)
+│   ├── app.py                   # Flask web application (routes + guards + /api/analytics)
+│   ├── csrf.py                  # Per-session CSRF tokens (form field หรือ X-CSRF-Token header)
 │   ├── static/
 │   │   ├── style.css            # Web UI design system
+│   │   ├── vendor/              # Vendored JS libs, pinned versions (see README.md inside)
+│   │   │   ├── alpine.min.js    # Alpine.js 3.17.5
+│   │   │   ├── htmx.min.js      # HTMX 2.0.11
+│   │   │   ├── sweetalert2.min.js/.css  # SweetAlert2 11.26.25
+│   │   │   ├── chart.umd.min.js # Chart.js 4.6.1
+│   │   │   └── flatpickr.min.*
 │   │   └── js/
 │   │       ├── jsQR.js          # Vendored jsQR (in-browser QR decode)
-│   │       └── scan.js          # Camera capture + /scan/resolve calls
+│   │       ├── scan.js          # Camera capture + /scan/resolve calls
+│   │       └── ui.js            # PyLib helpers: dialogs, toasts, data-confirm, flatpickr init
 │   └── templates/
 │       ├── icons.svg            # Lucide SVG icon sprite
-│       ├── base.html            # Layout + sidebar
+│       ├── base.html            # Layout + sidebar + vendor stack wiring
 │       ├── login.html           # Login page
-│       ├── index.html           # Dashboard
+│       ├── index.html           # Dashboard + Chart.js widgets
 │       ├── members.html         # Member management
 │       ├── books.html           # Book management (retire/restore/purge)
-│       ├── borrow.html          # Borrow with quick-date buttons + badge scan
+│       ├── borrow.html          # Borrow (Alpine lock state + Flatpickr due date)
 │       ├── return_book.html     # Return with overdue badges
 │       ├── history.html         # Borrow history
 │       ├── access.html          # Access recording + history
-│       └── settings.html        # Settings + about
+│       ├── settings.html        # Settings + about
+│       └── partials/            # HTMX table partials (_books/_members/_history)
 ├── tools/
 │   ├── rotate_qr_key.py         # Key rotation: backup → decrypt → re-encrypt
 │   └── regenerate_member_cards.py
@@ -180,7 +195,9 @@ THE-PY-LIB/
 │   ├── test_web_security.py     # CSRF/throttle/session
 │   ├── test_web_scan.py         # Badge scanner endpoint
 │   ├── test_web_delete_guards.py# History-bearing delete refusals
-│   └── test_web_book_retire.py  # Retire/restore/purge flow
+│   ├── test_web_book_retire.py  # Retire/restore/purge flow
+│   ├── test_web_partials.py     # HTMX partials + header CSRF + analytics
+│   └── test_web_pages_smoke.py  # Every authenticated page renders 200
 ├── docs/
 │   ├── SECURITY.md              # Security runbook (key rotation, HTTPS/LAN)
 │   └── DESIGN.md                # Visual design system notes
@@ -253,7 +270,7 @@ venv\Scripts\python -m unittest discover -s tests
 venv/bin/python -m unittest discover -s tests
 ```
 
-ปัจจุบันมี 84 test cases (12 test files) ครอบคลุม security, repositories, migrations, atomic borrow/return, backups, และ guards ของเว็บ
+ปัจจุบันมี 99 test cases (14 test files) ครอบคลุม security, repositories, migrations, atomic borrow/return, backups, HTMX partials/analytics และ guards ของเว็บ
 
 ---
 
