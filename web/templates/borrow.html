@@ -13,6 +13,14 @@
             {{ max_books_msg }}
         </div>
         {% endif %}
+        <div class="scan-row">
+            <button type="button" id="scanBtn" class="btn btn-secondary">
+                <svg width="16" height="16" class="icon-inline"><use href="#icon-book"/></svg> สแกนบัตรสมาชิก
+            </button>
+            <span id="scanStatus" class="scan-status" style="display:none"></span>
+        </div>
+        <video id="scanVideo" class="scan-preview" autoplay muted playsinline></video>
+        <canvas id="scanCanvas" hidden></canvas>
         <form method="POST" class="form-grid">
             {{ csrf_field }}
             <div class="form-group">
@@ -55,6 +63,29 @@
 </div>
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/jsQR.js') }}"></script>
+<script src="{{ url_for('static', filename='js/scan.js') }}"></script>
+<script>
+PyLibScan.createScanner({
+    buttonId: "scanBtn", videoId: "scanVideo",
+    canvasId: "scanCanvas", statusId: "scanStatus",
+    onResolve: function (m) {
+        var sel = document.getElementById("memberSelect");
+        if (sel) {
+            for (var i = 0; i < sel.options.length; i++) {
+                if (String(sel.options[i].value) === String(m.id)) {
+                    sel.selectedIndex = i;
+                    break;
+                }
+            }
+            updateBorrowInfo();
+        }
+        if (m.expired) {
+            alert("บัตรสมาชิกหมดอายุ กรุณาต่ออายุสมาชิกก่อนยืมหนังสือ");
+        }
+    }
+});
+</script>
 <script>
 function setDueDate(days) {
     const d = new Date();

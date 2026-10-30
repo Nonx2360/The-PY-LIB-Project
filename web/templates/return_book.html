@@ -11,6 +11,21 @@
         </div>
     </div>
     <div class="card-body">
+        <div class="scan-row">
+            <button type="button" id="scanBtn" class="btn btn-secondary">
+                <svg width="16" height="16" class="icon-inline"><use href="#icon-download"/></svg> สแกนบัตรเพื่อคืน
+            </button>
+            <span id="scanStatus" class="scan-status" style="display:none"></span>
+        </div>
+        <video id="scanVideo" class="scan-preview" autoplay muted playsinline></video>
+        <canvas id="scanCanvas" hidden></canvas>
+        {% if filter_member %}
+        <div class="scan-chip">
+            <svg width="14" height="14"><use href="#icon-users"/></svg>
+            สมาชิก: {{ filter_member.name }} ({{ filter_member.grade }} / {{ filter_member.number }})
+            <a href="{{ url_for('return_book') }}">ล้างตัวกรอง</a>
+        </div>
+        {% endif %}
         <div class="table-wrap">
         <table class="data-table" id="returnTable">
             <thead>
@@ -63,6 +78,17 @@
 </div>
 {% endblock %}
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/jsQR.js') }}"></script>
+<script src="{{ url_for('static', filename='js/scan.js') }}"></script>
+<script>
+PyLibScan.createScanner({
+    buttonId: "scanBtn", videoId: "scanVideo",
+    canvasId: "scanCanvas", statusId: "scanStatus",
+    onResolve: function (m) {
+        window.location = "{{ url_for('return_book') }}?member_id=" + m.id;
+    }
+});
+</script>
 <script>
 function filterReturn() {
     const q = document.getElementById('searchReturn').value.toLowerCase();

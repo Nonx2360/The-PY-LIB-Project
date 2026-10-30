@@ -236,6 +236,24 @@ input:focus-visible, select:focus-visible {
 .alert-error   { background: var(--stamp-red-soft);   color: var(--stamp-red);   border: 1px solid #EAC8C4; }
 .alert-warning { background: var(--marigold-wash);    color: var(--marigold);    border: 1px solid #EBD5AE; }
 
+/* ── Card scanner (member badges) ─────────────────── */
+.scan-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
+.scan-status { font-size: 14px; font-weight: 600; color: var(--ink-2); }
+.scan-status-error { color: var(--stamp-red); }
+.scan-preview {
+    display: none; width: 260px; max-width: 100%; aspect-ratio: 4 / 3;
+    object-fit: cover; background: var(--navy-deep);
+    border: 2px solid var(--navy); border-radius: var(--radius-card);
+    margin: 0 0 12px;
+}
+.scan-chip {
+    display: inline-flex; align-items: center; gap: 8px; margin: 0 0 14px;
+    padding: 2px 12px; border: 2px solid currentColor;
+    border-radius: var(--radius-stamp); background: var(--stamp-navy-soft);
+    color: var(--navy); font-size: 14px; font-weight: 700;
+}
+.scan-chip a { color: inherit; text-decoration: underline; }
+
 /* ── Info Grid ───────────────────────────────── */
 .info-grid { display: grid; gap: 8px; }
 .info-item { display: flex; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--line); }

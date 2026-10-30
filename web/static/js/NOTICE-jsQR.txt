@@ -1,0 +1,13 @@
+jsQR 1.4.0 — vendored dependency for THE PY-LIB web scanner
+===========================================================
+
+Source:   https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js
+          (https://github.com/cozmo/jsQR, tag v1.4.0)
+          jsQR is a pure-JavaScript QR code decoding library that runs in the
+          browser without native plugins, supporting all browsers including
+          iOS Safari (which lacks the BarcodeDetector API).
+License:  Apache License, Version 2.0
+          http://www.apache.org/licenses/LICENSE-2.0
+Copyright: (c) Cosmo Wolfe / contributors.
+
+The unmodified distribution file (jsQR.js) sits next to this notice.

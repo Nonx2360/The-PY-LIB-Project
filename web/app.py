@@ -342,20 +342,33 @@ def create_app():
                 flash(str(exc), "error")
             return redirect(url_for("return_book"))
 
-        borrowed = borrow_repo.fetchall(
-            """SELECT bl.id, m.name, m.grade, m.number, b.id as book_id, b.code, b.title,
-                      bl.borrow_date, bl.return_due
-               FROM borrow_log bl
-               JOIN members m ON bl.member_id=m.id
-               JOIN books b ON bl.book_id=b.id
-               WHERE bl.returned=0
-               ORDER BY bl.borrow_date DESC""")
+        member_filter = request.args.get("member_id", type=int)
+        sql = """SELECT bl.id, m.name, m.grade, m.number, b.id as book_id, b.code, b.title,
+                        bl.borrow_date, bl.return_due
+                 FROM borrow_log bl
+                 JOIN members m ON bl.member_id=m.id
+                 JOIN books b ON bl.book_id=b.id
+                 WHERE bl.returned=0"""
+        params = []
+        if member_filter:
+            sql += " AND bl.member_id=?"
+            params.append(member_filter)
+        sql += " ORDER BY bl.borrow_date DESC"
+        borrowed = borrow_repo.fetchall(sql, tuple(params))
         borrowed = _rows_to_dicts(borrowed, ["id", "name", "grade", "number", "book_id",
                                              "code", "title", "borrow_date", "return_due"])
         today = datetime.now().strftime("%Y-%m-%d")
         for b in borrowed:
             b["overdue"] = b["return_due"] < today
-        return render_template("return_book.html", borrowed=borrowed)
+        filter_member = None
+        if member_filter:
+            frow = member_repo.fetchone(
+                "SELECT id, name, grade, number FROM members WHERE id=?", (member_filter,))
+            if frow:
+                filter_member = {"id": frow[0], "name": frow[1],
+                                 "grade": frow[2], "number": frow[3]}
+        return render_template("return_book.html", borrowed=borrowed,
+                               filter_member=filter_member)
 
     # ── History ───────────────────────────────────────────
     @app.route("/history")
@@ -401,6 +414,45 @@ def create_app():
         logger.info("Web: access recorded: member_id=%s -> %s", member_id, action)
         flash(f"บันทึก{action}สำเร็จ", "success")
         return redirect(url_for("access"))
+
+    # ── Card scan (QR badge): shared by borrow/return/access pages ────────
+    # The camera itself never decrypts anything: POST /scan/resolve takes the
+    # QR payload text (AES-sealed) and decrypts server-side with the .env key.
+    # Each attempt costs one PBKDF2 derivation, and the route is fully wrapped
+    # by login_required + CSRF before_request — brute force is impractical.
+    @app.route("/scan/resolve", methods=["POST"])
+    @login_required
+    def scan_resolve():
+        payload = _clean(request.form.get("payload"), 800)
+        if not payload:
+            return jsonify(ok=False, error="invalid"), 400
+        try:
+            decoded = QRService.decode_qr(payload)
+        except Exception:
+            # wrong key / tampered / not a token — outcome only, never payload
+            logger.info("web scan: decode rejected (expired key, tampered, or foreign token)")
+            return jsonify(ok=False, error="invalid"), 400
+        parts = [p.strip() for p in decoded.split("|")]
+        if len(parts) != 5 or not parts[2]:
+            logger.info("web scan: decrypted payload is not a member badge shape")
+            return jsonify(ok=False, error="invalid"), 400
+        name, grade, number, _reg, _exp = parts
+        rows = member_repo.fetchall(
+            "SELECT id, name, grade, number, register_date, expire_date "
+            "FROM members WHERE number=?",
+            (number,))
+        if not rows:
+            logger.info("web scan: no member with that badge number")
+            return jsonify(ok=False, error="not_found"), 404
+        exact = [r for r in rows if r[1] == name and r[2] == grade]
+        row = (exact or rows)[0]
+        today = datetime.now().strftime("%Y-%m-%d")
+        member = {
+            "id": row[0], "name": row[1], "grade": row[2], "number": row[3],
+            "expire_date": row[5],
+            "expired": bool(row[5] and row[5] < today),
+        }
+        return jsonify(ok=True, member=member)
 
     # ── Settings ──────────────────────────────────────────
     @app.route("/settings", methods=["GET", "POST"])

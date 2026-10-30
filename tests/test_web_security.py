@@ -8,12 +8,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _harness as harness  # noqa: E402
 
 _env = harness.TempEnv()
-_env.apply()
-_env.patch()
 
+# NOTE: environment/binding mutations happen in setUpClass, NOT at import:
+# discovery imports every module before running any class, so module-level
+# patching lets the last-imported module repoint shared globals (DB_PATH,
+# PYLIB_ENV_FILE) for every other web test class in the same process.
 import web.app as web_app_mod  # noqa: E402
 from config.settings import DEFAULTS  # noqa: E402
-web_app_mod.DB_PATH = _env.db_path  # login uses a module-level binding
 
 CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 
@@ -25,6 +26,9 @@ class TestWebSecurity(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from config import settings as settings_mod
+        _env.apply()
+        _env.patch()
+        web_app_mod.DB_PATH = _env.db_path  # login uses a module-level binding
         cls._orig_settings_file = settings_mod.SETTINGS_FILE
         settings_mod.SETTINGS_FILE = os.path.join(_env.dir, "settings.json")
         cls.app = web_app_mod.create_app()
@@ -34,6 +38,7 @@ class TestWebSecurity(unittest.TestCase):
     def tearDownClass(cls):
         from config import settings as settings_mod
         settings_mod.SETTINGS_FILE = cls._orig_settings_file
+        _env.restore()
         harness.cleanup(_env.dir)
 
     # ---------------- helpers ----------------
