@@ -66,7 +66,8 @@ class LibraryApp(ctk.CTk):
     def _show_login(self):
         self.content_frame = ctk.CTkFrame(self, fg_color=theme.content_bg())
         self.content_frame.pack(fill="both", expand=True)
-        self.current_view = LoginView(self.content_frame, self._on_login_success)
+        self.current_view = LoginView(self.content_frame,
+                                      on_login_success=self._on_login_success)
 
     def _on_login_success(self):
         logger.info("Login successful, building main UI")
