@@ -30,60 +30,20 @@
 <div class="card">
     <div class="card-header">
         <h3>รายชื่อสมาชิก ({{ members|length }} คน)</h3>
-        <div class="search-box">
-            <svg width="16" height="16" class="search-icon"><use href="#icon-search"/></svg>
-            <input type="text" id="searchMembers" placeholder="ค้นหา ชื่อ/ชั้น/หมายเลข..." oninput="filterMembers()">
-        </div>
+        <form class="table-filter" action="{{ url_for('members') }}"
+              hx-get="{{ url_for('members') }}"
+              hx-target="#membersTableWrap" hx-swap="outerHTML"
+              hx-trigger="input changed delay:300ms from:input[name=q]"
+              hx-indicator="#membersTableWrap">
+            <div class="search-box">
+                <svg width="16" height="16" class="search-icon"><use href="#icon-search"/></svg>
+                <input type="text" name="q" value="{{ q }}" placeholder="ค้นหา ชื่อ/ชั้น/หมายเลข...">
+            </div>
+            <noscript><button type="submit" class="btn btn-ghost btn-sm">ค้นหา</button></noscript>
+        </form>
     </div>
     <div class="card-body">
-        <div class="table-wrap">
-        <table class="data-table" id="membersTable">
-            <thead>
-                <tr>
-                    <th>#</th><th>ชื่อ</th><th>ชั้น</th><th>หมายเลข</th>
-                    <th>วันที่ลงทะเบียน</th><th>วันหมดอายุ</th><th>จัดการ</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for m in members %}
-                <tr data-search="{{ m.name }} {{ m.grade }} {{ m.number }}">
-                    <td>{{ m.id }}</td>
-                    <td>{{ m.name }}</td>
-                    <td>{{ m.grade }}</td>
-                    <td>{{ m.number }}</td>
-                    <td>{{ m.register_date }}</td>
-                    <td>{{ m.expire_date }}</td>
-                    <td class="actions-cell">
-                        {% if m.qrcode_path %}
-                        <a href="{{ url_for('serve_assets', filename=m.qrcode_path.replace('assets/', '')) }}" target="_blank" class="btn btn-ghost btn-sm" title="ดู QR">
-                            <svg width="14" height="14"><use href="#icon-image"/></svg>
-                        </a>
-                        {% endif %}
-                        <form method="POST" action="{{ url_for('member_delete', mid=m.id) }}" class="inline-form">
-                            {{ csrf_field }}
-                            <button type="submit" class="btn btn-danger btn-sm" title="ลบ" onclick="return confirm('ลบสมาชิก {{ m.name }}?')">
-                                <svg width="14" height="14"><use href="#icon-trash"/></svg>
-                            </button>
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-                {% if not members %}
-                <tr><td colspan="7" class="text-center text-muted">ยังไม่มีสมาชิก</td></tr>
-                {% endif %}
-            </tbody>
-        </table>
-        </div><!-- /table-wrap -->
+        {% include 'partials/_members_table.html' %}
     </div>
 </div>
-{% endblock %}
-{% block scripts %}
-<script>
-function filterMembers() {
-    const q = document.getElementById('searchMembers').value.toLowerCase();
-    document.querySelectorAll('#membersTable tbody tr').forEach(row => {
-        row.style.display = (row.dataset.search || '').toLowerCase().includes(q) ? '' : 'none';
-    });
-}
-</script>
 {% endblock %}

@@ -354,3 +354,39 @@ input:focus-visible, select:focus-visible {
     .login-container { border-radius: 12px; }
     .login-brand h1 { font-size: 22px; }
 }
+/* ── Vendored-stack glue: Alpine x-cloak, HTMX request state, dialogs ── */
+[x-cloak] { display: none !important; }
+.htmx-request { opacity: 0.55; pointer-events: none; transition: opacity 0.15s ease; }
+.swal2-container { z-index: 2000; }
+.swal2-popup {
+    font-family: var(--font-body);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-soft);
+}
+.swal2-title { font-family: var(--font-display); font-size: 20px; }
+
+/* ── HTMX table filter toolbar ── */
+.table-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.status-filter {
+    padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-input);
+    background: var(--surface); font-family: var(--font-body); font-size: 14px; color: var(--ink);
+}
+
+/* ── borrow page: Alpine state notes ── */
+.borrow-lock-note, .borrow-ok-note {
+    margin-top: 2px; padding: 9px 13px; border-radius: 8px;
+    font-size: 14px; display: flex; align-items: center; gap: 8px;
+}
+.borrow-lock-note {
+    border: 1px dashed var(--stamp-red); background: var(--stamp-red-soft); color: var(--stamp-red);
+}
+.borrow-ok-note {
+    border: 1px solid var(--line); background: var(--surface-hover); color: var(--ink-2);
+}
+
+/* ── dashboard charts (Chart.js) ── */
+.chart-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
+.chart-card .chart-body { position: relative; height: 260px; padding: 10px; }
+@media (max-width: 1100px) {
+    .chart-grid { grid-template-columns: 1fr; }
+}

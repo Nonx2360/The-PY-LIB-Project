@@ -50,4 +50,102 @@
         <div class="action-text">คืนหนังสือ</div>
     </a>
 </div>
+<div class="chart-grid">
+    <div class="card chart-card">
+        <div class="card-header">
+            <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-bar-chart"/></svg> การยืมหนังสือ 14 วันล่าสุด</h3>
+        </div>
+        <div class="chart-body"><canvas id="chartBorrow" aria-label="แนวโน้มการยืมหนังสือ 14 วันล่าสุด"></canvas></div>
+    </div>
+    <div class="card chart-card">
+        <div class="card-header">
+            <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-users"/></svg> การเข้าออก 7 วันล่าสุด</h3>
+        </div>
+        <div class="chart-body"><canvas id="chartAccess" aria-label="จำนวนการเข้าออกห้องสมุด 7 วันล่าสุด"></canvas></div>
+    </div>
+    <div class="card chart-card">
+        <div class="card-header">
+            <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-book"/></svg> สถานะหนังสือ</h3>
+        </div>
+        <div class="chart-body"><canvas id="chartStatus" aria-label="สัดส่วนสถานะหนังสือ"></canvas></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script>
+(function () {
+    if (typeof Chart === "undefined") return;
+    Chart.defaults.font.family = "'Sarabun', sans-serif";
+    Chart.defaults.color = "#4E6472";
+    Chart.defaults.borderColor = "#E3E0D8";
+
+    function dayLabel(iso) { return iso.slice(5); }   /* MM-DD → short tick */
+
+    fetch("{{ url_for('api_analytics') }}", {
+        headers: { "X-CSRF-Token": PyLib.csrfToken() }   /* harmless on GETs, keeps one auth pattern */
+    })
+        .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+        .then(function (d) {
+            var commonOpts = {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { grid: { display: false } },
+                    y: { beginAtZero: true, ticks: { precision: 0 } }
+                }
+            };
+
+            new Chart(document.getElementById("chartBorrow"), {
+                type: "line",
+                data: {
+                    labels: d.borrow_last_14_days.map(function (r) { return dayLabel(r.date); }),
+                    datasets: [{
+                        data: d.borrow_last_14_days.map(function (r) { return r.count; }),
+                        borderColor: "#1E4B63", backgroundColor: "rgba(30, 75, 99, 0.10)",
+                        fill: true, tension: 0.35, pointRadius: 2
+                    }]
+                },
+                options: commonOpts
+            });
+
+            new Chart(document.getElementById("chartAccess"), {
+                type: "line",
+                data: {
+                    labels: d.access_last_7_days.map(function (r) { return dayLabel(r.date); }),
+                    datasets: [{
+                        data: d.access_last_7_days.map(function (r) { return r.count; }),
+                        borderColor: "#B45309", backgroundColor: "rgba(180, 83, 9, 0.10)",
+                        fill: true, tension: 0.35, pointRadius: 2
+                    }]
+                },
+                options: commonOpts
+            });
+
+            var s = d.book_status;
+            var total = s.available + s.borrowed + s.retired + s.other;
+            var body = document.querySelector("#chartStatus").closest(".chart-body");
+            if (!total) {
+                body.innerHTML = '<p class="text-center text-muted" style="line-height:230px">ยังไม่มีหนังสือในระบบ</p>';
+                return;
+            }
+            new Chart(document.getElementById("chartStatus"), {
+                type: "doughnut",
+                data: {
+                    labels: ["ว่าง", "ยืมแล้ว", "หยุดให้บริการ", "อื่น ๆ"],
+                    datasets: [{
+                        data: [s.available, s.borrowed, s.retired, s.other],
+                        backgroundColor: ["#276749", "#B45309", "#647782", "#CFCBBF"],
+                        borderWidth: 0, hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false, cutout: "62%",
+                    plugins: { legend: { position: "bottom", labels: { boxWidth: 12 } } }
+                }
+            });
+        })
+        .catch(function (status) { /* analytics failed: current stat cards still carry the numbers */ });
+})();
+</script>
 {% endblock %}

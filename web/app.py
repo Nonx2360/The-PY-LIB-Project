@@ -116,9 +116,14 @@ def create_app():
             return None
         if not session.get("logged_in"):
             return redirect(url_for("login"))
-        if not csrf_mod.validate(session, request.form):
+        # form field first (regular pages); X-CSRF-Token header for HTMX requests
+        token = (request.form.get("csrf_token")
+                 or request.headers.get("X-CSRF-Token", ""))
+        if not csrf_mod.validate(session, token):
             logger.warning("csrf: rejected POST (missing/invalid token) %s", request.path)
             flash("เซสชันหมดอายุหรือโทเคนไม่ถูกต้อง กรุณาลองอีกครั้ง", "error")
+            if request.headers.get("HX-Request") == "true":
+                return "", 403
             return redirect(request.referrer or url_for("dashboard"))
         return None
 
@@ -176,12 +181,22 @@ def create_app():
     @app.route("/members")
     @login_required
     def members():
-        rows = member_repo.fetchall(
-            "SELECT id, name, grade, number, register_date, expire_date, qrcode_path "
-            "FROM members ORDER BY id DESC")
+        q = _clean(request.args.get("q"), 80)
+        sql = ("SELECT id, name, grade, number, register_date, expire_date, qrcode_path "
+               "FROM members")
+        params = ()
+        if q:
+            like = f"%{q}%"
+            sql += " WHERE name LIKE ? OR grade LIKE ? OR number LIKE ?"
+            params = (like, like, like)
+        sql += " ORDER BY id DESC"
+        rows = member_repo.fetchall(sql, params)
         members_ = _rows_to_dicts(rows, ["id", "name", "grade", "number",
                                          "register_date", "expire_date", "qrcode_path"])
-        return render_template("members.html", members=members_)
+        if request.headers.get("HX-Request") == "true":
+            return render_template("partials/_members_table.html",
+                                   members=members_, q=q)
+        return render_template("members.html", members=members_, q=q)
 
     @app.route("/members/add", methods=["POST"])
     @login_required
@@ -251,12 +266,28 @@ def create_app():
     @app.route("/books")
     @login_required
     def books():
-        rows = book_repo.fetchall(
-            """SELECT bo.id, bo.code, bo.title, bo.status,
-                      (SELECT COUNT(*) FROM borrow_log bl WHERE bl.book_id=bo.id) AS history
-               FROM books bo ORDER BY bo.id DESC""")
+        q = _clean(request.args.get("q"), 80)
+        status = (request.args.get("status") or "").strip()
+        where, params = [], []
+        if q:
+            like = f"%{q}%"
+            where.append("(bo.code LIKE ? OR bo.title LIKE ?)")
+            params += [like, like]
+        if status:
+            where.append("bo.status = ?")
+            params.append(status)
+        sql = """SELECT bo.id, bo.code, bo.title, bo.status,
+                        (SELECT COUNT(*) FROM borrow_log bl WHERE bl.book_id=bo.id) AS history
+                 FROM books bo"""
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += " ORDER BY bo.id DESC"
+        rows = book_repo.fetchall(sql, tuple(params))
         books_ = _rows_to_dicts(rows, ["id", "code", "title", "status", "history"])
-        return render_template("books.html", books=books_)
+        if request.headers.get("HX-Request") == "true":
+            return render_template(
+                "partials/_books_table.html", books=books_, q=q, status=status)
+        return render_template("books.html", books=books_, q=q, status=status)
 
     @app.route("/books/add", methods=["POST"])
     @login_required
@@ -461,16 +492,26 @@ def create_app():
     @app.route("/history")
     @login_required
     def history():
-        rows = borrow_repo.fetchall(
-            """SELECT m.name, m.grade, b.code, b.title,
-                      bl.borrow_date, bl.return_due, bl.returned
-               FROM borrow_log bl
-               JOIN members m ON bl.member_id=m.id
-               JOIN books b ON bl.book_id=b.id
-               ORDER BY bl.id DESC""")
+        q = _clean(request.args.get("q"), 80)
+        sql = """SELECT m.name, m.grade, b.code, b.title,
+                        bl.borrow_date, bl.return_due, bl.returned
+                 FROM borrow_log bl
+                 JOIN members m ON bl.member_id=m.id
+                 JOIN books b ON bl.book_id=b.id"""
+        params = ()
+        if q:
+            like = f"%{q}%"
+            sql += (" WHERE m.name LIKE ? OR m.grade LIKE ? "
+                    "OR b.code LIKE ? OR b.title LIKE ?")
+            params = (like, like, like, like)
+        sql += " ORDER BY bl.id DESC"
+        rows = borrow_repo.fetchall(sql, params)
         records = _rows_to_dicts(rows, ["name", "grade", "code", "title",
                                         "borrow_date", "return_due", "returned"])
-        return render_template("history.html", records=records)
+        if request.headers.get("HX-Request") == "true":
+            return render_template("partials/_history_table.html",
+                                   records=records, q=q)
+        return render_template("history.html", records=records, q=q)
 
     # ── Access History + Recording ──────────────────────────
     @app.route("/access")
@@ -567,5 +608,49 @@ def create_app():
         borrowed = borrow_repo.fetchall(
             "SELECT COUNT(*) FROM borrow_log WHERE returned=0")[0][0]
         return jsonify({"members": members, "books": books, "borrowed": borrowed})
+
+    # Dashboard analytics for the Chart.js widgets (index.html chart section).
+    # All series are zero-filled so gaps read as zero, not skipped days.
+    @app.route("/api/analytics")
+    @login_required
+    def api_analytics():
+        from datetime import timedelta
+        today = datetime.now().date()
+
+        def zero_filled_days(number_of_days, counts_by_day):
+            days = []
+            for i in range(number_of_days):
+                d = (today - timedelta(days=number_of_days - 1 - i)).strftime("%Y-%m-%d")
+                days.append({"date": d, "count": counts_by_day.get(d, 0)})
+            return days
+
+        start14 = (today - timedelta(days=13)).strftime("%Y-%m-%d")
+        rows = borrow_repo.fetchall(
+            "SELECT borrow_date, COUNT(*) FROM borrow_log "
+            "WHERE borrow_date >= ? GROUP BY borrow_date", (start14,))
+        borrow_by_day = {r[0]: r[1] for r in rows}
+
+        start7 = (today - timedelta(days=6)).strftime("%Y-%m-%d")
+        rows = access_repo.fetchall(
+            "SELECT substr(access_time, 1, 10) AS d, COUNT(*) FROM access_log "
+            "WHERE substr(access_time, 1, 10) >= ? GROUP BY d", (start7,))
+        access_by_day = {r[0]: r[1] for r in rows}
+
+        status_counts = {r[0]: r[1] for r in book_repo.fetchall(
+            "SELECT status, COUNT(*) FROM books GROUP BY status")}
+        known = {BOOK_STATUS_AVAILABLE, BOOK_STATUS_BORROWED, BOOK_STATUS_RETIRED}
+        status_breakdown = {
+            "available": status_counts.get(BOOK_STATUS_AVAILABLE, 0),
+            "borrowed": status_counts.get(BOOK_STATUS_BORROWED, 0),
+            "retired": status_counts.get(BOOK_STATUS_RETIRED, 0),
+            "other": sum(v for k, v in status_counts.items() if k not in known),
+        }
+        return jsonify({
+            "borrow_last_14_days":
+                zero_filled_days(14, borrow_by_day),
+            "access_last_7_days":
+                zero_filled_days(7, access_by_day),
+            "book_status": status_breakdown,
+        })
 
     return app

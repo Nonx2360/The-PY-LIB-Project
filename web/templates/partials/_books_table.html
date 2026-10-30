@@ -1,0 +1,65 @@
+<div class="table-wrap" id="booksTableWrap">
+    <table class="data-table" id="booksTable">
+        <thead>
+            <tr>
+                <th>#</th><th>รหัส</th><th>ชื่อหนังสือ</th><th>สถานะ</th><th>จัดการ</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for b in books %}
+            <tr data-search="{{ b.code }} {{ b.title }}">
+                <td>{{ b.id }}</td>
+                <td>{{ b.code }}</td>
+                <td>{{ b.title }}</td>
+                <td>
+                    {% if b.status == 'ว่าง' %}
+                    <span class="badge badge-success">ว่าง</span>
+                    {% elif b.status == 'หยุดให้บริการ' %}
+                    <span class="badge badge-muted">หยุดให้บริการ</span>
+                    {% else %}
+                    <span class="badge badge-warning">{{ b.status }}</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if b.status == 'ว่าง' %}
+                    <form method="POST" action="{{ url_for('book_retire', bid=b.id) }}" class="inline-form">
+                        {{ csrf_field }}
+                        <button type="submit" class="btn btn-secondary btn-sm" title="หยุดให้บริการ — ออกจากรายการยืม ประวัติถูกเก็บไว้">หยุด</button>
+                    </form>
+                    {% elif b.status == 'หยุดให้บริการ' %}
+                    <form method="POST" action="{{ url_for('book_restore', bid=b.id) }}" class="inline-form">
+                        {{ csrf_field }}
+                        <button type="submit" class="btn btn-success btn-sm" title="กลับมาให้บริการตามปกติ">กลับมา</button>
+                    </form>
+                    {% endif %}
+                    <form method="POST" action="{{ url_for('book_delete', bid=b.id) }}" class="inline-form">
+                        {{ csrf_field }}
+                        {% if b.status == 'หยุดให้บริการ' %}
+                        <button type="submit" class="btn btn-danger btn-sm"
+                                data-confirm data-confirm-danger
+                                title="ลบถาวร พร้อมประวัติการยืม {{ b.history }} รายการ"
+                                data-confirm="ลบถาวร: หนังสือ {{ b.title }} พร้อมประวัติการยืม {{ b.history }} รายการ — ลบแล้วไม่สามารถย้อนกลับ ยืนยันหรือไม่?">
+                            <svg width="14" height="14"><use href="#icon-trash"/></svg> ลบถาวร
+                        </button>
+                        {% else %}
+                        <button type="submit" class="btn btn-danger btn-sm"
+                                title="{% if b.history %}มีประวัติการยืม — ต้องกด หยุด ก่อนจึงลบถาวรได้{% else %}ลบ{% endif %}"
+                                data-confirm
+                                data-confirm="ลบหนังสือ {{ b.title }}?">
+                            <svg width="14" height="14"><use href="#icon-trash"/></svg>
+                        </button>
+                        {% endif %}
+                    </form>
+                </td>
+            </tr>
+            {% endfor %}
+            {% if not books %}
+            <tr>
+                <td colspan="5" class="text-center text-muted">
+                    {% if q %}ไม่พบข้อมูลที่ตรงกับ "{{ q }}"{% else %}ยังไม่มีหนังสือ{% endif %}
+                </td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>

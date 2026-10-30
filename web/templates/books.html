@@ -26,81 +26,26 @@
 <div class="card">
     <div class="card-header">
         <h3>หนังสือทั้งหมด ({{ books|length }} เล่ม)</h3>
-        <div class="search-box">
-            <svg width="16" height="16" class="search-icon"><use href="#icon-search"/></svg>
-            <input type="text" id="searchBooks" placeholder="ค้นหา รหัส/ชื่อ..." oninput="filterBooks()">
-        </div>
+        <form class="table-filter" action="{{ url_for('books') }}"
+              hx-get="{{ url_for('books') }}"
+              hx-target="#booksTableWrap" hx-swap="outerHTML"
+              hx-trigger="input changed delay:300ms from:input[name=q], change from:select[name=status]"
+              hx-indicator="#booksTableWrap">
+            <div class="search-box">
+                <svg width="16" height="16" class="search-icon"><use href="#icon-search"/></svg>
+                <input type="text" name="q" value="{{ q }}" placeholder="ค้นหา รหัส/ชื่อ...">
+            </div>
+            <select name="status" class="status-filter" aria-label="กรองตามสถานะ">
+                <option value="">ทุกสถานะ</option>
+                <option value="ว่าง" {% if status == 'ว่าง' %}selected{% endif %}>ว่าง</option>
+                <option value="ยืมแล้ว" {% if status == 'ยืมแล้ว' %}selected{% endif %}>ยืมแล้ว</option>
+                <option value="หยุดให้บริการ" {% if status == 'หยุดให้บริการ' %}selected{% endif %}>หยุดให้บริการ</option>
+            </select>
+            <noscript><button type="submit" class="btn btn-ghost btn-sm">ค้นหา</button></noscript>
+        </form>
     </div>
     <div class="card-body">
-        <div class="table-wrap">
-        <table class="data-table" id="booksTable">
-            <thead>
-                <tr>
-                    <th>#</th><th>รหัส</th><th>ชื่อหนังสือ</th><th>สถานะ</th><th>จัดการ</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for b in books %}
-                <tr data-search="{{ b.code }} {{ b.title }}">
-                    <td>{{ b.id }}</td>
-                    <td>{{ b.code }}</td>
-                    <td>{{ b.title }}</td>
-                    <td>
-                        {% if b.status == 'ว่าง' %}
-                        <span class="badge badge-success">ว่าง</span>
-                        {% elif b.status == 'หยุดให้บริการ' %}
-                        <span class="badge badge-muted">หยุดให้บริการ</span>
-                        {% else %}
-                        <span class="badge badge-warning">{{ b.status }}</span>
-                        {% endif %}
-                    </td>
-                    <td>
-                        {% if b.status == 'ว่าง' %}
-                        <form method="POST" action="{{ url_for('book_retire', bid=b.id) }}" class="inline-form">
-                            {{ csrf_field }}
-                            <button type="submit" class="btn btn-secondary btn-sm" title="หยุดให้บริการ — ออกจากรายการยืม ประวัติถูกเก็บไว้">หยุด</button>
-                        </form>
-                        {% elif b.status == 'หยุดให้บริการ' %}
-                        <form method="POST" action="{{ url_for('book_restore', bid=b.id) }}" class="inline-form">
-                            {{ csrf_field }}
-                            <button type="submit" class="btn btn-success btn-sm" title="กลับมาให้บริการตามปกติ">กลับมา</button>
-                        </form>
-                        {% endif %}
-                        <form method="POST" action="{{ url_for('book_delete', bid=b.id) }}" class="inline-form">
-                            {{ csrf_field }}
-                            {% if b.status == 'หยุดให้บริการ' %}
-                            <button type="submit" class="btn btn-danger btn-sm"
-                                    title="ลบถาวร พร้อมประวัติการยืม {{ b.history }} รายการ"
-                                    onclick="return confirm('ลบถาวร: หนังสือ {{ b.title }} พร้อมประวัติการยืม {{ b.history }} รายการ — ลบแล้วไม่สามารถย้อนกลับ ยืนยันหรือไม่?');">
-                                <svg width="14" height="14"><use href="#icon-trash"/></svg> ลบถาวร
-                            </button>
-                            {% else %}
-                            <button type="submit" class="btn btn-danger btn-sm"
-                                    title="{% if b.history %}มีประวัติการยืม — ต้องกด หยุด ก่อนจึงลบถาวรได้{% else %}ลบ{% endif %}"
-                                    onclick="return confirm('ลบหนังสือ {{ b.title }}?');">
-                                <svg width="14" height="14"><use href="#icon-trash"/></svg>
-                            </button>
-                            {% endif %}
-                        </form>
-                    </td>
-                </tr>
-                {% endfor %}
-                {% if not books %}
-                <tr><td colspan="5" class="text-center text-muted">ยังไม่มีหนังสือ</td></tr>
-                {% endif %}
-            </tbody>
-        </table>
-        </div><!-- /table-wrap -->
+        {% include 'partials/_books_table.html' %}
     </div>
 </div>
-{% endblock %}
-{% block scripts %}
-<script>
-function filterBooks() {
-    const q = document.getElementById('searchBooks').value.toLowerCase();
-    document.querySelectorAll('#booksTable tbody tr').forEach(row => {
-        row.style.display = (row.dataset.search || '').toLowerCase().includes(q) ? '' : 'none';
-    });
-}
-</script>
 {% endblock %}

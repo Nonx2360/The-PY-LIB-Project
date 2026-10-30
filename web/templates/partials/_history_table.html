@@ -1,0 +1,42 @@
+<div class="table-wrap" id="historyTableWrap">
+    <table class="data-table" id="historyTable">
+        <thead>
+            <tr>
+                <th>สมาชิก</th><th>ชั้น</th><th>รหัสหนังสือ</th><th>ชื่อหนังสือ</th>
+                <th>วันที่ยืม</th><th>กำหนดคืน</th><th>สถานะ</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for r in records %}
+            <tr data-search="{{ r.name }} {{ r.grade }} {{ r.code }} {{ r.title }}">
+                <td>{{ r.name }}</td>
+                <td>{{ r.grade }}</td>
+                <td>{{ r.code }}</td>
+                <td>{{ r.title }}</td>
+                <td>{{ r.borrow_date }}</td>
+                <td>{{ r.return_due }}</td>
+                <td>
+                    {% if r.returned %}
+                    <span class="badge badge-success">
+                        <svg width="12" height="12" class="icon-inline"><use href="#icon-check-circle"/></svg>
+                        คืนแล้ว
+                    </span>
+                    {% else %}
+                    <span class="badge badge-warning">
+                        <svg width="12" height="12" class="icon-inline"><use href="#icon-clock"/></svg>
+                        กำลังยืม
+                    </span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+            {% if not records %}
+            <tr>
+                <td colspan="7" class="text-center text-muted">
+                    {% if q %}ไม่พบข้อมูลที่ตรงกับ "{{ q }}"{% else %}ยังไม่มีประวัติ{% endif %}
+                </td>
+            </tr>
+            {% endif %}
+        </tbody>
+    </table>
+</div>

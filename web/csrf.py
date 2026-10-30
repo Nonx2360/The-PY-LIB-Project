@@ -21,9 +21,17 @@ def csrf_field_markup(session):
 
 
 def validate(session, form):
-    """Constant-time comparison of submitted token vs session token."""
+    """Constant-time comparison of submitted token vs session token.
+
+    `form` may be the request form mapping or a plain token string —
+    HTMX-style requests carry the token in the X-CSRF-Token header instead
+    of a hidden input, and web/app.py passes the joined token value down.
+    """
+    if isinstance(form, dict) or hasattr(form, "get"):
+        submitted = form.get("csrf_token", "")
+    else:
+        submitted = form or ""
     expected = session.get(_TOKEN_KEY)
-    submitted = form.get(_TOKEN_KEY, "")
     if not expected:
         return False
     return hmac.compare_digest(expected, submitted)
