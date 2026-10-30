@@ -35,14 +35,14 @@
                 {% for endpoint, icon, label in nav_items %}
                 <a href="{{ url_for(endpoint) }}" class="nav-link {% if request.endpoint == endpoint %}active{% endif %}">
                     <span class="nav-icon"><svg width="18" height="18"><use href="#{{ icon }}"/></svg></span>
-                    {{ label }}
+                    <span class="nav-text">{{ label }}</span>
                 </a>
                 {% endfor %}
             </div>
             <div class="sidebar-footer">
                 <a href="{{ url_for('logout') }}" class="nav-link logout-link">
                     <span class="nav-icon"><svg width="18" height="18"><use href="#icon-logout"/></svg></span>
-                    ออกจากระบบ
+                    <span class="nav-text">ออกจากระบบ</span>
                 </a>
             </div>
         </nav>
