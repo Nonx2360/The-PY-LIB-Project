@@ -2,15 +2,20 @@
 import customtkinter as ctk
 
 import ui.theme as theme
-from core.security import verify_password
+from core import throttle
 from core.logger import logger
+from db.repositories.admin_repo import AdminRepository
 
 
 class LoginView(ctk.CTkFrame):
+    # Same lockout policy as the web app: 5 failed attempts per username
+    # within 15 minutes. The pair form ('local', username) keeps desktop
+    # attempts isolated from web keys.
+    THROTTLE_KEY_PREFIX = ("local",)
+
     def __init__(self, parent, db_conn=None, on_login_success=None):
         # db_conn accepted (and ignored) for API compatibility with older
-        # call sites; the view opens a short-lived connection per attempt
-        # instead of holding a persistent one on the login screen.
+        # call sites; the view verifies through AdminRepository per attempt.
         super().__init__(parent, fg_color="transparent")
         self.on_login_success = on_login_success
         self._build()
@@ -94,22 +99,24 @@ class LoginView(ctk.CTkFrame):
         if not username or not password:
             self.error_label.configure(text="กรุณากรอกชื่อผู้ใช้และรหัสผ่าน")
             return
+
+        key = self.THROTTLE_KEY_PREFIX + (username,)
+        if throttle.is_locked(key):
+            minutes = throttle.lock_remaining_minutes(key)
+            logger.warning("desktop login: throttled attempt")
+            self.error_label.configure(
+                text=f"ลองผิดหลายครั้งเกินไป กรุณารอ ~{minutes} นาที")
+            return
         try:
-            from config.constants import DB_PATH
-            import sqlite3
-            conn = sqlite3.connect(DB_PATH)
-            try:
-                conn.execute("PRAGMA foreign_keys=ON")
-                row = conn.execute(
-                    "SELECT password FROM admin_users WHERE username = ?", (username,)).fetchone()
-            finally:
-                conn.close()
-            if row and verify_password(password, row[0]):
+            if AdminRepository().verify_credentials(username, password):
+                throttle.record_success(key)
                 logger.info("Login successful")
                 self.on_login_success()
-            else:
-                logger.warning("Failed login attempt")  # usernames are not logged
-                self.error_label.configure(text="ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
+                return
+            throttle.record_failure(key)
+            logger.warning("Failed login attempt")  # usernames are not logged
+            self.error_label.configure(
+                text="ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
         except Exception as e:
             logger.error(f"Login DB error: {e}", exc_info=True)
             self.error_label.configure(text=f"เกิดข้อผิดพลาด: {str(e)}")

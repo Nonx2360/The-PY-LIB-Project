@@ -7,35 +7,29 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash
 from config import settings
-from config.constants import DB_PATH
 from config.env_store import ensure_secrets
 from db.schema import init_db
 from db.repositories.member_repo import MemberRepository
 from db.repositories.book_repo import BookRepository
 from db.repositories.borrow_repo import BorrowRepository, BorrowError
 from db.repositories.access_repo import AccessRepository
+from db.repositories.admin_repo import AdminRepository
 from services.qr_service import QRService
 from services.pdf_service import PDFService
-from core.security import verify_password
 from core.logger import logger
+from core import throttle
 
 from web import csrf as csrf_mod
-from web import throttle
 from web.csrf import csrf_field_markup
 
 from functools import wraps
 from markupsafe import Markup
-import bcrypt
 import sqlite3
 
 
 def _rows_to_dicts(rows, columns):
     return [dict(zip(columns, row, strict=False)) for row in rows]
 
-
-# Timing-equalization hash for unknown usernames (avoid bcrypt compares of
-# existing users vs instant rejection of missing users).
-_DUMMY_HASH = bcrypt.hashpw(b"pylib-timing-equalizer", bcrypt.gensalt())
 
 # Server-side field limits (mirror the <input maxlength> guidance)
 LIMITS = {
@@ -87,6 +81,7 @@ def create_app():
     book_repo = BookRepository()
     borrow_repo = BorrowRepository()
     access_repo = AccessRepository()
+    admin_repo = AdminRepository()
 
     def login_required(f):
         @wraps(f)
@@ -135,22 +130,15 @@ def create_app():
             key = (ip, username)
 
             if throttle.is_locked(key):
-                remaining = throttle.lock_remaining_seconds(key)
-                minutes = max(1, (remaining + 59) // 60)
-                logger.warning("web login: throttled attempt (locked %ss remaining)", remaining)
+                minutes = throttle.lock_remaining_minutes(key)
+                logger.warning("web login: throttled attempt "
+                               "(locked %ss remaining)",
+                               throttle.lock_remaining_seconds(key))
                 # one generic message for throttled AND wrong creds (no user enumeration)
                 flash(f"ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง (ลองใหม่ได้ในอีก ~{minutes} นาที)", "error")
                 return render_template("login.html", config=settings.all()), 429
 
-            conn = sqlite3.connect(DB_PATH)
-            conn.row_factory = sqlite3.Row
-            user = conn.execute(
-                "SELECT * FROM admin_users WHERE username=?", (username,)).fetchone()
-            conn.close()
-
-            hashed = (user["password"] if user else _DUMMY_HASH)
-            ok = verify_password(password, hashed)
-            if ok:
+            if admin_repo.verify_credentials(username, password):
                 throttle.record_success(key)
                 session["logged_in"] = True
                 session["username"] = username

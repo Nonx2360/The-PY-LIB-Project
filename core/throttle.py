@@ -1,9 +1,9 @@
-# web/throttle.py — in-process sliding-window login throttling
+# core/throttle.py — in-process sliding-window login throttling
 #
-# Single-process protection for the bundled dev/gateway server: after
-# MAX_FAILED_AUTH failed logins within WINDOW_SECONDS for one (IP, username)
-# combination, further attempts are locked until that window expires.
-# Keys are dropped after the window to avoid unbounded memory growth.
+# Shared by the web app (key = (ip, username)) and the desktop app
+# (key = ("local", username)). After MAX_FAILED_AUTH failed logins within
+# WINDOW_SECONDS for one key, further attempts are locked until that window
+# expires. Keys are dropped after the window to avoid unbounded memory growth.
 import time
 from collections import defaultdict, deque
 
@@ -35,6 +35,11 @@ def lock_remaining_seconds(key):
     if dq and len(dq) >= MAX_FAILED_AUTH:
         return max(0, int(WINDOW_SECONDS - (time.time() - dq[0])))
     return 0
+
+
+def lock_remaining_minutes(key):
+    """Whole minutes left in the lockout, minimum 1 (for user-facing text)."""
+    return max(1, (lock_remaining_seconds(key) + 59) // 60)
 
 
 def record_failure(key):
