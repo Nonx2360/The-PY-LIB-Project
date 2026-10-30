@@ -170,7 +170,7 @@ class BorrowView(ctk.CTkFrame):
             self.book_info_label.configure(text=f"หนังสือ '{book[2]}' ไม่พร้อมให้ยืม (สถานะ: {book[3]})")
             self.current_book = None
             self.borrow_button.pack_forget()
-            show_toast(self, "หนังสือถูกยืมอยู่", "red")
+            show_toast(self, f"หนังสือไม่พร้อมให้ยืม (สถานะ: {book[3]})", "red")
             return
         self.book_info_label.configure(
             text=f"รหัส: {book[1]}    ชื่อ: {book[2]}    สถานะ: พร้อมให้ยืม")

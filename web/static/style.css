@@ -183,6 +183,7 @@ input:focus-visible, select:focus-visible {
 .badge-success { background: var(--stamp-green-soft); color: var(--stamp-green); }
 .badge-warning { background: var(--marigold-wash); color: var(--marigold); }
 .badge-danger  { background: var(--stamp-red-soft);  color: var(--stamp-red); }
+.badge-muted   { background: var(--paper);           color: var(--ink-3); }
 
 /* ── Forms ───────────────────────────────────── */
 .form-group { margin-bottom: 14px; }

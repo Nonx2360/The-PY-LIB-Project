@@ -46,11 +46,26 @@
                     <td>{{ b.code }}</td>
                     <td>{{ b.title }}</td>
                     <td>
-                        <span class="badge {% if b.status == 'ว่าง' %}badge-success{% else %}badge-warning{% endif %}">
-                            {{ b.status }}
-                        </span>
+                        {% if b.status == 'ว่าง' %}
+                        <span class="badge badge-success">ว่าง</span>
+                        {% elif b.status == 'หยุดให้บริการ' %}
+                        <span class="badge badge-muted">หยุดให้บริการ</span>
+                        {% else %}
+                        <span class="badge badge-warning">{{ b.status }}</span>
+                        {% endif %}
                     </td>
                     <td>
+                        {% if b.status == 'ว่าง' %}
+                        <form method="POST" action="{{ url_for('book_retire', bid=b.id) }}" class="inline-form">
+                            {{ csrf_field }}
+                            <button type="submit" class="btn btn-secondary btn-sm" title="หยุดให้บริการ — ออกจากรายการยืม ประวัติถูกเก็บไว้">หยุด</button>
+                        </form>
+                        {% elif b.status == 'หยุดให้บริการ' %}
+                        <form method="POST" action="{{ url_for('book_restore', bid=b.id) }}" class="inline-form">
+                            {{ csrf_field }}
+                            <button type="submit" class="btn btn-success btn-sm" title="กลับมาให้บริการตามปกติ">กลับมา</button>
+                        </form>
+                        {% endif %}
                         <form method="POST" action="{{ url_for('book_delete', bid=b.id) }}" class="inline-form">
                             {{ csrf_field }}
                             <button type="submit" class="btn btn-danger btn-sm" title="ลบ" onclick="return confirm('ลบหนังสือ {{ b.title }}?');">

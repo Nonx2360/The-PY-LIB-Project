@@ -118,13 +118,27 @@ class BookView(ctk.CTkFrame):
 
         status = (b[3] or "").strip()
         status_badge = (theme.badge_green(row, "ว่าง") if status in ("ว่าง", "Available", "")
+                        else theme.badge_blue(row, "หยุดให้บริการ") if status == "หยุดให้บริการ"
                         else theme.badge_red(row, "ยืมแล้ว") if "ยืม" in status
                         else theme.badge_amber(row, status))
         status_badge.grid(row=0, column=2, rowspan=2, padx=6)
 
-        theme.ghost_button(row, "ลบ", lambda bb=b: self._delete_book(bb),
-                           width=56, height=30, text_color=theme.DANGER).grid(
-            row=0, column=3, rowspan=2, padx=(6, 10))
+        if status == "ว่าง":
+            theme.ghost_button(row, "หยุด", lambda bb=b: self._retire_book(bb),
+                               width=56, height=30).grid(row=0, column=3, rowspan=2, padx=(6, 0))
+            theme.ghost_button(row, "ลบ", lambda bb=b: self._delete_book(bb),
+                               width=56, height=30, text_color=theme.DANGER).grid(
+                row=0, column=4, rowspan=2, padx=(6, 10))
+        elif status == "หยุดให้บริการ":
+            theme.ghost_button(row, "กลับมา", lambda bb=b: self._restore_book(bb),
+                               width=56, height=30).grid(row=0, column=3, rowspan=2, padx=(6, 0))
+            theme.ghost_button(row, "ลบ", lambda bb=b: self._delete_book(bb),
+                               width=56, height=30, text_color=theme.DANGER).grid(
+                row=0, column=4, rowspan=2, padx=(6, 10))
+        else:
+            theme.ghost_button(row, "ลบ", lambda bb=b: self._delete_book(bb),
+                               width=56, height=30, text_color=theme.DANGER).grid(
+                row=0, column=3, rowspan=2, padx=(6, 10))
 
     # ================= actions =================
     def _add_book(self):
@@ -145,6 +159,30 @@ class BookView(ctk.CTkFrame):
         except Exception as e:
             logger.error(f"add_book error: {e}", exc_info=True)
             show_toast(self, f"เกิดข้อผิดพลาด: {e}", "red")
+
+    def _retire_book(self, book):
+        # try_return() sets the book back to 'ว่าง' on every return, so a
+        # borrowed book must be returned BEFORE it can be withdrawn —
+        # otherwise the return would silently un-retire it.
+        if (book[3] or "").strip() != "ว่าง":
+            show_toast(self, "หนังสือไม่อยู่ที่ชั้น ต้องคืนก่อนจึงหยุดให้บริการได้", "red")
+            return
+        try:
+            self.repo.update_status(book[0], "หยุดให้บริการ")
+            show_toast(self, "หยุดให้บริการแล้ว — ประวัติการยืมยังถูกเก็บไว้", "green")
+            self._display_books()
+        except Exception as e:
+            logger.error(f"retire_book error: {e}", exc_info=True)
+            show_toast(self, "เกิดข้อผิดพลาด ไม่สามารถหยุดให้บริการได้", "red")
+
+    def _restore_book(self, book):
+        try:
+            self.repo.update_status(book[0], "ว่าง")
+            show_toast(self, "หนังสือกลับมาให้บริการปกติแล้ว", "green")
+            self._display_books()
+        except Exception as e:
+            logger.error(f"restore_book error: {e}", exc_info=True)
+            show_toast(self, "เกิดข้อผิดพลาด ไม่สามารถกลับมาให้บริการได้", "red")
 
     def _delete_book(self, book):
         active = self.base.fetchone(

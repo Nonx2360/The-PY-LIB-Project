@@ -54,13 +54,13 @@ class BorrowRepository(BaseRepository):
             if row is None:
                 raise BorrowError("ไม่พบหนังสือในระบบ")
             if row[0] != "ว่าง":
-                raise BorrowError("หนังสือเล่มนี้ไม่พร้อมให้ยืม (ถูกยืมอยู่)")
+                raise BorrowError(f"หนังสือเล่มนี้ไม่พร้อมให้ยืม (สถานะ: {row[0]})")
 
             cur = conn.execute(
                 "UPDATE books SET status = 'ยืมแล้ว' WHERE id = ? AND status = 'ว่าง'",
                 (book_id,))
             if cur.rowcount != 1:
-                raise BorrowError("หนังสือเล่มนี้ไม่พร้อมให้ยืม (ถูกยืมอยู่)")
+                raise BorrowError(f"หนังสือเล่มนี้ไม่พร้อมให้ยืม (สถานะ: {row[0]})")
 
             overdue = conn.execute(
                 "SELECT COUNT(*) FROM borrow_log "

@@ -305,6 +305,39 @@ def create_app():
         flash("ลบหนังสือสำเร็จ", "success")
         return redirect(url_for("books"))
 
+    @app.route("/books/<int:bid>/retire", methods=["POST"])
+    @login_required
+    def book_retire(bid):
+        """Withdraw a book from circulation — history is kept, deletion stays
+        blocked by FK, but the book leaves every borrow flow until restored."""
+        book = book_repo.fetchone("SELECT status FROM books WHERE id=?", (bid,))
+        if book is None:
+            flash("ไม่พบหนังสือในระบบ", "error")
+        elif book[0] == "ว่าง":
+            book_repo.update_status(bid, "หยุดให้บริการ")
+            logger.info("Web: book retired: id=%s", bid)
+            flash("หยุดให้บริการแล้ว — ประวัติการยืมยังถูกเก็บไว้", "success")
+        elif book[0] == "หยุดให้บริการ":
+            flash("หนังสือเล่มนี้หยุดให้บริการอยู่แล้ว", "error")
+        else:
+            flash("หนังสือกำลังถูกยืมอยู่ กรุณารอคืนก่อน แล้วจึงหยุดให้บริการ", "error")
+        return redirect(url_for("books"))
+
+    @app.route("/books/<int:bid>/restore", methods=["POST"])
+    @login_required
+    def book_restore(bid):
+        """Put a retired book back into circulation (status ว่าง)."""
+        book = book_repo.fetchone("SELECT status FROM books WHERE id=?", (bid,))
+        if book is None:
+            flash("ไม่พบหนังสือในระบบ", "error")
+        elif book[0] == "หยุดให้บริการ":
+            book_repo.update_status(bid, "ว่าง")
+            logger.info("Web: book restored: id=%s", bid)
+            flash("หนังสือกลับมาให้บริการตามปกติแล้ว", "success")
+        else:
+            flash("หนังสือเล่มนี้กำลังให้บริการอยู่แล้ว", "error")
+        return redirect(url_for("books"))
+
     # ── Borrow ────────────────────────────────────────────
     @app.route("/borrow", methods=["GET", "POST"])
     @login_required
