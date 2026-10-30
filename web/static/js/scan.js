@@ -54,7 +54,11 @@
             body.append("csrf_token", csrfToken());
             fetch(BASE, { method: "POST", body: body })
                 .then(function (r) {
-                    return r.json().then(function (j) { return { code: r.status, json: j }; });
+                    // old server builds (started before a code change) answer
+                    // unknown routes with 404 HTML; tolerate non-JSON bodies
+                    return r.json().then(
+                        function (j) { return { code: r.status, json: j }; },
+                        function () { return { code: r.status, json: null }; });
                 })
                 .then(function (res) {
                     var j = res.json || {};
@@ -64,13 +68,19 @@
                         opts.onResolve(j.member);
                         return;
                     }
-                    var msg = j.error === "not_found"
-                        ? "ไม่พบสมาชิกนี้ในระบบ"
-                        : j.error === "invalid"
-                          ? "QR ไม่ถูกต้อง บัตรเก่า หรือไฟล์โทเคนถูกเปลี่ยน"
-                          : "ไม่สามารถอ่านบัตรได้";
-                    if (res.code === 401 || res.code === 403) {
+                    var msg;
+                    // our server's JSON errors carry an `error` field; a bare
+                    // 404 without one is Flask's HTML page from an OLD build
+                    if (j.error === "not_found") {
+                        msg = "ไม่พบสมาชิกนี้ในระบบ";
+                    } else if (j.error === "invalid") {
+                        msg = "QR ไม่ถูกต้อง บัตรเก่า หรือไฟล์โทเคนถูกเปลี่ยน";
+                    } else if (res.code === 404) {
+                        msg = "เซิร์ฟเวอร์ WebUI กำลังรันโค้ดเก่าอยู่ — ไปที่หน้า Web UI ในแอปเดสก์ท็อป กด หยุด แล้ว เริ่ม Web UI อีกครั้ง";
+                    } else if (res.code === 401 || res.code === 403) {
                         msg = "เซสชันหมดอายุ กรุณาล็อกอินใหม่";
+                    } else {
+                        msg = "ไม่สามารถอ่านบัตรได้";
                     }
                     setStatus(msg, true);
                 })
