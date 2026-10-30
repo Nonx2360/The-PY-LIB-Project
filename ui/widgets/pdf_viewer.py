@@ -2,7 +2,7 @@
 import os
 import customtkinter as ctk
 from PIL import Image
-import fitz
+import pymupdf as fitz  # new module name for PyMuPDF (the `fitz` alias is deprecated)
 
 import ui.theme as theme
 from core.logger import logger

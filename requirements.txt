@@ -2,13 +2,13 @@ customtkinter==5.2.1
 Pillow==13.0.0
 qrcode==7.4.2
 packaging==23.2
-opencv-python==4.8.1.78
+opencv-python==5.0.0.93
+numpy==2.4.6
 pyzbar==0.1.9
 bcrypt==4.1.2
 cryptography==50.0.2
 python-dotenv==1.2.4
 reportlab
 pandas
-numpy
-PyMuPDF
+pymupdf
 flask==3.1.3
