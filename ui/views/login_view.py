@@ -7,9 +7,11 @@ from core.logger import logger
 
 
 class LoginView(ctk.CTkFrame):
-    def __init__(self, parent, db_conn, on_login_success):
+    def __init__(self, parent, db_conn=None, on_login_success=None):
+        # db_conn accepted (and ignored) for API compatibility with older
+        # call sites; the view opens a short-lived connection per attempt
+        # instead of holding a persistent one on the login screen.
         super().__init__(parent, fg_color="transparent")
-        self.db_conn = db_conn
         self.on_login_success = on_login_success
         self._build()
 
@@ -93,15 +95,21 @@ class LoginView(ctk.CTkFrame):
             self.error_label.configure(text="กรุณากรอกชื่อผู้ใช้และรหัสผ่าน")
             return
         try:
-            cursor = self.db_conn.cursor()
-            cursor.execute("SELECT password FROM admin_users WHERE username = ?", (username,))
-            row = cursor.fetchone()
+            from config.constants import DB_PATH
+            import sqlite3
+            conn = sqlite3.connect(DB_PATH)
+            try:
+                conn.execute("PRAGMA foreign_keys=ON")
+                row = conn.execute(
+                    "SELECT password FROM admin_users WHERE username = ?", (username,)).fetchone()
+            finally:
+                conn.close()
             if row and verify_password(password, row[0]):
-                logger.info(f"Login successful: {username}")
+                logger.info("Login successful")
                 self.on_login_success()
             else:
-                logger.warning(f"Failed login attempt for: {username}")
+                logger.warning("Failed login attempt")  # usernames are not logged
                 self.error_label.configure(text="ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง")
         except Exception as e:
-            logger.error(f"Login DB error: {e}")
+            logger.error(f"Login DB error: {e}", exc_info=True)
             self.error_label.configure(text=f"เกิดข้อผิดพลาด: {str(e)}")

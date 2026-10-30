@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import ui.theme as theme
 from config import settings
 from db.repositories.book_repo import BookRepository
-from db.repositories.borrow_repo import BorrowRepository
+from db.repositories.borrow_repo import BorrowRepository, BorrowError
 from db.repositories.member_repo import MemberRepository
 from ui.widgets.scan_window import ScanWindow
 from ui.widgets.toast import show_toast
@@ -193,23 +193,10 @@ class BorrowView(ctk.CTkFrame):
             return
 
         mid = self.current_member["id"]
-        overdue = self.borrow_repo.fetchone(
-            "SELECT COUNT(*) FROM borrow_log WHERE member_id=? AND returned=0 AND return_due < date('now')",
-            (mid,))[0]
-        if overdue > 0:
-            show_toast(self, "ไม่สามารถยืมได้ เนื่องจากมีหนังสือค้างส่ง", "red")
-            return
-        current = self.borrow_repo.fetchone(
-            "SELECT COUNT(*) FROM borrow_log WHERE member_id=? AND returned=0", (mid,))[0]
-        max_books = settings.get("max_books_per_member")
-        if current >= max_books:
-            show_toast(self, f"ยืมครบจำนวนที่กำหนดแล้ว ({max_books} เล่ม)", "red")
-            return
 
         borrow_date = datetime.now().strftime("%Y-%m-%d")
         try:
-            self.borrow_repo.add(mid, self.current_book[0], borrow_date, due_str)
-            self.book_repo.update_status(self.current_book[0], "ยืมแล้ว")
+            self.borrow_repo.try_borrow(mid, self.current_book[0], borrow_date, due_str)
             show_toast(
                 self, f"ยืมสำเร็จ: {self.current_book[2]}\n"
                       f"สมาชิก: {self.current_member['name']}   คืนภายใน: {due_str}",
@@ -218,6 +205,8 @@ class BorrowView(ctk.CTkFrame):
             self.book_info_label.configure(text="—")
             self.current_book = None
             self.borrow_button.grid_forget()
+        except BorrowError as e:
+            show_toast(self, str(e), "red")
         except Exception as e:
             logger.error(f"process_borrow error: {e}", exc_info=True)
             show_toast(self, f"เกิดข้อผิดพลาด: {e}", "red")

@@ -1,11 +1,8 @@
 # app.py - LibraryApp shell + navigation controller
-import sqlite3
-
 import customtkinter as ctk
 
 import db.schema
 import ui.theme as theme
-from config.constants import DB_PATH
 from core.logger import logger
 
 from ui.views.login_view import LoginView
@@ -56,7 +53,6 @@ class LibraryApp(ctk.CTk):
 
         db.schema.init_db()
 
-        self.login_conn = sqlite3.connect(DB_PATH)
         self.nav_frame = None
         self.header_frame = None
         self.content_frame = None
@@ -70,16 +66,10 @@ class LibraryApp(ctk.CTk):
     def _show_login(self):
         self.content_frame = ctk.CTkFrame(self, fg_color=theme.content_bg())
         self.content_frame.pack(fill="both", expand=True)
-        self.current_view = LoginView(self.content_frame, self.login_conn, self._on_login_success)
+        self.current_view = LoginView(self.content_frame, self._on_login_success)
 
     def _on_login_success(self):
         logger.info("Login successful, building main UI")
-        if self.login_conn is not None:
-            try:
-                self.login_conn.close()
-            except Exception as exc:
-                logger.warning(f"Error closing login connection: {exc}")
-            self.login_conn = None
         if self.content_frame is not None:
             self.content_frame.destroy()
         self._build_main_ui()
@@ -96,7 +86,6 @@ class LibraryApp(ctk.CTk):
         self.current_view = None
         self.nav_buttons = {}
         self.active_key = None
-        self.login_conn = sqlite3.connect(DB_PATH)
         self._show_login()
 
     # ================= main shell =================

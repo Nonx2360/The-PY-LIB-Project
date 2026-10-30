@@ -4,7 +4,7 @@ from datetime import datetime
 
 import ui.theme as theme
 from db.repositories.book_repo import BookRepository
-from db.repositories.borrow_repo import BorrowRepository
+from db.repositories.borrow_repo import BorrowRepository, BorrowError
 from db.repositories.member_repo import MemberRepository
 from ui.widgets.scan_window import ScanWindow
 from ui.widgets.toast import show_toast
@@ -151,26 +151,23 @@ class ReturnView(ctk.CTkFrame):
              if overdue else theme.badge_amber(row, f"กำหนดคืน {due}")).grid(
                 row=0, column=3, rowspan=2, padx=4)
 
-            # fetch the book_id for this borrow record so we can update book status
-            book_row = self.borrow_repo.fetchone(
-                "SELECT book_id FROM borrow_log WHERE id = ?", (bl_id,))
-            book_id = book_row[0] if book_row else None
             theme.success_button(
                 row, "คืนหนังสือ",
-                lambda b=bl_id, bk=book_id: self._return_book(b, bk),
+                lambda b=bl_id: self._return_book(b),
                 width=110, height=32, font=theme.font(13, bold=True)).grid(
                 row=0, column=4, rowspan=2, padx=(6, 10))
 
-    def _return_book(self, record_id, book_id):
+    def _return_book(self, record_id):
         try:
-            logger.debug(f"Returning borrow_log id={record_id}, book_id={book_id}")
-            self.borrow_repo.mark_returned(record_id)
-            if book_id is not None:
-                self.book_repo.update_status(book_id, "ว่าง")
+            logger.debug(f"Returning borrow_log id={record_id}")
+            self.borrow_repo.try_return(record_id)
             show_toast(self, "คืนหนังสือสำเร็จ", "green")
             if self._current_member:
                 logger.debug(f"Reloading books for member id={self._current_member['id']}")
                 self._load_borrowed_books(self._current_member["id"])
         except Exception as e:
             logger.error(f"return_book error: {e}", exc_info=True)
-            show_toast(self, f"เกิดข้อผิดพลาด: {e}", "red")
+            if isinstance(e, BorrowError):
+                show_toast(self, str(e), "red")
+            else:
+                show_toast(self, f"เกิดข้อผิดพลาด: {e}", "red")
