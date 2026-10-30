@@ -1,6 +1,5 @@
 # ui/views/settings_view.py
 import os
-import shutil
 import customtkinter as ctk
 from datetime import datetime
 
@@ -173,8 +172,9 @@ class SettingsView(ctk.CTkFrame):
 
     def _backup_db(self):
         from tkinter import filedialog
-        db_path = "db/library.db"
-        if not os.path.exists(db_path):
+
+        from services.backup_service import create_backup, verify_backup
+        if not os.path.exists("db/library.db"):
             show_toast(self, "ไม่พบไฟล์ฐานข้อมูล", "red")
             return
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -184,9 +184,14 @@ class SettingsView(ctk.CTkFrame):
             initialfile=f"library_backup_{ts}.db")
         if dest:
             try:
-                shutil.copy2(db_path, dest)
-                show_toast(self, f"สำรองสำเร็จ: {os.path.basename(dest)}", "green")
-                logger.info(f"Database backed up to {dest}")
+                create_backup("db/library.db", dest_path=dest)
+                report = verify_backup(dest)
+                if report["ok"]:
+                    show_toast(self, f"สำรองสำเร็จ + ตรวจสอบผ่าน: {os.path.basename(dest)}", "green")
+                    logger.info(f"Database backup (verified) to {dest}")
+                else:
+                    show_toast(self, f"สำรองแล้ว แต่ตรวจสอบไม่ผ่าน: {report['integrity']}", "orange")
+                    logger.warning(f"Backup verification failed: {report}")
             except Exception as e:
                 logger.error(f"Backup failed: {e}", exc_info=True)
                 show_toast(self, f"สำรองไม่สำเร็จ: {e}", "red")

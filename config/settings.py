@@ -11,6 +11,7 @@ DEFAULTS = {
     "member_expiry_days": 365,
     "school_name": "DSNPRU",
     "school_logo_path": "assets/logos/school_logo.png",
+    "webui_host": "127.0.0.1",  # loopback by default; set to 0.0.0.0 for LAN (with HTTPS)
 }
 
 _settings = dict(DEFAULTS)
@@ -22,7 +23,7 @@ def load():
     _settings = dict(DEFAULTS)
     if os.path.exists(SETTINGS_FILE):
         try:
-            with open(SETTINGS_FILE, "r", encoding="utf-8") as f:
+            with open(SETTINGS_FILE, encoding="utf-8") as f:
                 data = json.load(f)
             for k in DEFAULTS:
                 if k in data:

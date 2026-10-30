@@ -5,6 +5,7 @@ import customtkinter as ctk
 from werkzeug.serving import make_server
 
 import ui.theme as theme
+from config import settings
 from core.logger import logger
 from ui.widgets.toast import show_toast
 
@@ -18,7 +19,11 @@ class WebUIView(ctk.CTkFrame):
         self._server = None
         self._thread = None
         self._running = False
+        # Secure-by-default: only this machine; opt into LAN via webui_host setting
         self._port = 5000
+        self._host = settings.get("webui_host") or "127.0.0.1"
+        if self._host != "127.0.0.1" and self._host != "localhost":
+            logger.warning(f"Web UI binds to '{self._host}' (non-localhost: expose only via HTTPS/reverse proxy)")
         self._build()
 
     def _build(self):
@@ -70,7 +75,7 @@ class WebUIView(ctk.CTkFrame):
         info_body.pack(fill="x", padx=18, pady=(0, 18))
 
         rows = [
-            ("พอร์ต", str(self._port)),
+            ("พอร์ต", f"{self._host}:{self._port} ({'โลคัลเท่านั้น' if self._browse_host() == '127.0.0.1' else 'แชร์ในเครือข่าย'})"),
             ("ฟีเจอร์", "สมาชิก, หนังสือ, ยืม-คืน, ประวัติ, ตั้งค่า"),
             ("ล็อกอิน", "ใช้รหัสผ่านเดียวกับแอปเดสท็อป"),
             ("ข้อจำกัด", "ไม่รองรับ QR สแกนจากกล้อง (ต้องใช้เดสท็อป)"),
@@ -84,6 +89,9 @@ class WebUIView(ctk.CTkFrame):
                          text_color=theme.text_color(), anchor="w").pack(
                 side="left", fill="x", expand=True)
 
+    def _browse_host(self):
+        return "127.0.0.1" if self._host in ("", "0.0.0.0") else self._host
+
     def _start_server(self):
         if self._running:
             return
@@ -92,13 +100,13 @@ class WebUIView(ctk.CTkFrame):
             app = create_app()
 
             # make_server (instead of app.run) so the server can be shut down later
-            self._server = make_server("0.0.0.0", self._port, app, threaded=True)
+            self._server = make_server(self._host, self._port, app, threaded=True)
             self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
             self._thread.start()
             self._running = True
 
             self._status_label.configure(text="● กำลังทำงาน", text_color="#22C55E")
-            self._url_label.configure(text=f"WebUI Running at : http://127.0.0.1:{self._port}")
+            self._url_label.configure(text=f"WebUI Running at : http://{self._browse_host()}:{self._port}")
             self._start_btn.configure(state="disabled")
             self._stop_btn.configure(state="normal")
             self._open_btn.configure(state="normal")
