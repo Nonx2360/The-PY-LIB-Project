@@ -172,7 +172,7 @@ class BookView(ctk.CTkFrame):
                 initialfile="book_import_template.xlsx")
             if filename:
                 df.to_excel(filename, index=False)
-                show_toast(self, f"บันทึกแม่แบบ Excel สำเร็จ", "green")
+                show_toast(self, "บันทึกแม่แบบ Excel สำเร็จ", "green")
                 if os.name == "nt":
                     os.startfile(filename)
         except Exception as e:

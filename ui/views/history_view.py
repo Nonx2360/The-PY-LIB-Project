@@ -64,7 +64,6 @@ class HistoryView(ctk.CTkFrame):
         col_frame = ctk.CTkFrame(table_card, fg_color=theme.content_bg(), corner_radius=8)
         col_frame.pack(fill="x", padx=10, pady=(0, 4))
         for i, c in enumerate(cols):
-            w = {0: 0.24, 1: 0.34, 2: 0.12, 3: 0.13, 4: 0.10}[i]
             ctk.CTkLabel(col_frame, text=c, font=theme.font(12, bold=True),
                          text_color=theme.muted_color(), anchor="w").pack(
                 side="left", expand=True, fill="x", padx=(i * 2, 0))

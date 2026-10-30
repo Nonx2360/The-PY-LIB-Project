@@ -13,6 +13,7 @@ class TestBookRepository(unittest.TestCase):
     def setUpClass(cls):
         cls._tmp_dir = tempfile.mkdtemp()
         cls.db_path = os.path.join(cls._tmp_dir, "test.db")
+        cls._orig_base_path = base_repo_mod.DB_PATH
         base_repo_mod.DB_PATH = cls.db_path
         cls._orig_schema_path = db.schema.DB_PATH
         db.schema.DB_PATH = cls.db_path
@@ -20,16 +21,19 @@ class TestBookRepository(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        # restore EVERY global this class patched — a leak here would redirect
+        # later test classes (e.g. the web suite) to this temp path
         db.schema.DB_PATH = cls._orig_schema_path
-        try:
-            os.remove(cls.db_path)
-        except OSError:
-            pass
+        base_repo_mod.DB_PATH = cls._orig_base_path
+        os.remove(cls.db_path)
 
     def setUp(self):
         self.repo = BookRepository()
-        with self.repo.get_connection() as conn:
+        conn = self.repo.get_connection()
+        try:
             conn.execute("DELETE FROM books")
+        finally:
+            conn.close()
 
     def test_add_get_all(self):
         bid = self.repo.add("B-001", "Python เบื้องต้น", "available")

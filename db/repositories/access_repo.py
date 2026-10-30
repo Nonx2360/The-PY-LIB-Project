@@ -5,7 +5,7 @@ class AccessRepository(BaseRepository):
     def log_access(self, member_id, access_time, action):
         query = "INSERT INTO access_log (member_id, access_time, action) VALUES (?, ?, ?)"
         return self.execute(query, (member_id, access_time, action))
-        
+
     def get_recent_access(self, limit=50):
         query = '''
             SELECT al.access_time, m.name, m.grade, al.action

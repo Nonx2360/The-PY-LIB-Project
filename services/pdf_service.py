@@ -1,7 +1,6 @@
 # services/pdf_service.py
 import os
 import qrcode
-from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
@@ -17,7 +16,7 @@ class PDFService:
         font_dir = "assets/fonts"
         regular_path = os.path.join(font_dir, 'Sarabun-Regular.ttf')
         bold_path = os.path.join(font_dir, 'Sarabun-Bold.ttf')
-        
+
         # Only register if they exist and aren't registered
         try:
             pdfmetrics.registerFont(TTFont('Sarabun', regular_path))
@@ -28,7 +27,7 @@ class PDFService:
     @classmethod
     def generate_member_card_pdf(cls, member_name, member_number, school_logo_path, output_pdf_path, qr_base64):
         cls.register_fonts()
-        
+
         # Card Size
         card_width = 85.6 * mm
         card_height = 53.98 * mm
@@ -93,7 +92,7 @@ class PDFService:
     def generate_borrow_history_pdf(cls, filename, records):
         cls.register_fonts()
         doc = SimpleDocTemplate(filename, pagesize=A4, rightMargin=20, leftMargin=20, topMargin=20, bottomMargin=20)
-        
+
         # Create table headers & rows
         data = [["ชื่อสมาชิก", "ชั้น", "เลขที่", "รหัสหนังสือ", "ชื่อหนังสือ", "วันที่ยืม", "วันที่คืน", "สถานะ"]]
         for record in records:
@@ -102,7 +101,7 @@ class PDFService:
                 record[0], record[1], record[2], record[3], record[4],
                 record[5], record[6], status
             ])
-            
+
         style = ParagraphStyle(name='Sarabun', fontName='Sarabun', fontSize=10, leading=12)
         style_bold = ParagraphStyle(name='Sarabun-Bold', fontName='Sarabun-Bold', fontSize=10, leading=12)
 
@@ -122,7 +121,7 @@ class PDFService:
             ('GRID', (0,0), (-1,-1), 1, colors.black),
             ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
         ]))
-        
+
         elements = [table]
         doc.build(elements)
 
@@ -130,7 +129,7 @@ class PDFService:
     def generate_access_history_pdf(cls, filename, records):
         cls.register_fonts()
         doc = SimpleDocTemplate(filename, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-        
+
         data = [["ชื่อสมาชิก", "ชั้น", "เลขที่", "เวลา", "การทำรายการ"]]
         for record in records:
             data.append([
@@ -140,7 +139,7 @@ class PDFService:
                 str(record[3]),  # time
                 str(record[4])   # action
             ])
-            
+
         styles = getSampleStyleSheet()
         title_style = ParagraphStyle(
             'ThaiTitle',
@@ -151,7 +150,7 @@ class PDFService:
             alignment=1, # Center
             spaceAfter=20
         )
-        
+
         style = ParagraphStyle(name='Sarabun', fontName='Sarabun', fontSize=11, leading=14)
         style_bold = ParagraphStyle(name='Sarabun-Bold', fontName='Sarabun-Bold', fontSize=11, leading=14)
 

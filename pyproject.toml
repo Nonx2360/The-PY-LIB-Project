@@ -1,0 +1,39 @@
+# pyproject.toml — project tool configuration (ruff lint/style)
+[tool.ruff]
+line-length = 120
+extend-exclude = [
+    "venv",
+    "ui_preview",
+    "legacy_main.py",   # frozen pre-refactor monolith kept for reference only
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes (unused imports/variables, shadowing)
+    "W",   # whitespace warnings
+    "B",   # bugbear common bugs
+    "UP",  # pyupgrade (modern syntax)
+    "S",   # bandit security smells
+]
+ignore = [
+    "E501",  # long lines allowed (Thai strings, SQL blocks)
+    "S110",  # try-except-pass is idiomatic for GUI widget teardown / cleanup
+    "S704",  # Markup() is used intentionally for the CSRF hidden input; its
+             # only interpolated value is secrets.token_urlsafe() (alnum)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use fixture password strings and assertRaises on SQL constraint
+# violations; the small f-string COUNT query uses a fixed test-only table.
+"tests/*" = ["S105", "S106", "S108", "S311", "S608"]
+# The historic default the bootstrap must RETIRE is referenced by name.
+"db/schema.py" = ["S105"]
+# Binds a user-configured host; the 0.0.0.0 string appears in a warning check.
+"ui/views/webui_view.py" = ["S104"]
+# csrf hidden-input field name; os.startfile() Excel openers.
+"web/csrf.py" = ["S105"]
+"ui/views/book_view.py" = ["S606"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["config", "core", "db", "services", "ui", "web", "tools"]

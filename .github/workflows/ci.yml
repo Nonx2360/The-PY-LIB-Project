@@ -1,0 +1,62 @@
+# .github/workflows/ci.yml — tests, lint, dependency audit, secret scan
+#
+# Security regression suite runs on every push/PR to main. The dependency
+# audit (pip-audit) and secret scan (gitleaks) may fail for repository-level
+# reasons (historical leaks pending purge decisions); they are separate jobs
+# so test/lint results stay visible.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: tests + lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff
+      - name: Lint (ruff)
+        run: ruff check .
+      - name: Unit, integration & security regression tests
+        run: python -m unittest discover -s tests -v
+
+  dependency-audit:
+    name: pip-audit (known CVEs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install requirements + pip-audit
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt pip-audit
+      - name: Audit installed dependency set
+        run: pip-audit --skip-editable
+
+  secret-scan:
+    name: gitleaks (committed secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Scan the current tree for committed secrets
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo \
+            zricethezav/gitleaks:latest detect --source . --no-git --redact

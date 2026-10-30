@@ -1,5 +1,4 @@
 # config/constants.py
-import os
 
 # Load settings on import
 from config.settings import load as _load_settings
