@@ -3,25 +3,33 @@
 {% block page_title %}แดชบอร์ด{% endblock %}
 {% block content %}
 <div class="stats-grid">
-    <div class="stat-card stat-members">
-        <div class="stat-icon"><svg width="32" height="32"><use href="#icon-users"/></svg></div>
-        <div class="stat-number">{{ members }}</div>
-        <div class="stat-label">สมาชิกทั้งหมด</div>
-    </div>
-    <div class="stat-card stat-books">
-        <div class="stat-icon"><svg width="32" height="32"><use href="#icon-book-open"/></svg></div>
-        <div class="stat-number">{{ books }}</div>
-        <div class="stat-label">หนังสือทั้งหมด</div>
+    <div class="stat-card stat-overdue">
+        <div class="stat-icon"><svg width="30" height="30"><use href="#icon-alert-triangle"/></svg></div>
+        <div>
+            <div class="stat-number">{{ overdue }}</div>
+            <div class="stat-label">ค้างส่ง</div>
+        </div>
     </div>
     <div class="stat-card stat-borrowed">
-        <div class="stat-icon"><svg width="32" height="32"><use href="#icon-send"/></svg></div>
-        <div class="stat-number">{{ borrowed }}</div>
-        <div class="stat-label">กำลังยืม</div>
+        <div class="stat-icon"><svg width="30" height="30"><use href="#icon-send"/></svg></div>
+        <div>
+            <div class="stat-number">{{ borrowed }}</div>
+            <div class="stat-label">กำลังยืม</div>
+        </div>
     </div>
-    <div class="stat-card stat-overdue">
-        <div class="stat-icon"><svg width="32" height="32"><use href="#icon-alert-triangle"/></svg></div>
-        <div class="stat-number">{{ overdue }}</div>
-        <div class="stat-label">ค้างส่ง</div>
+    <div class="stat-card stat-books">
+        <div class="stat-icon"><svg width="30" height="30"><use href="#icon-book-open"/></svg></div>
+        <div>
+            <div class="stat-number">{{ books }}</div>
+            <div class="stat-label">หนังสือทั้งหมด</div>
+        </div>
+    </div>
+    <div class="stat-card stat-members">
+        <div class="stat-icon"><svg width="30" height="30"><use href="#icon-users"/></svg></div>
+        <div>
+            <div class="stat-number">{{ members }}</div>
+            <div class="stat-label">สมาชิกทั้งหมด</div>
+        </div>
     </div>
 </div>
 <div class="actions-grid">
