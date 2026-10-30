@@ -8,6 +8,7 @@
     </div>
     <div class="card-body">
         <form method="POST" action="{{ url_for('access_record') }}" class="form-inline">
+            {{ csrf_field }}
             <div class="form-group" style="flex:2">
                 <label>เลือกสมาชิก</label>
                 <select name="member_id" required>

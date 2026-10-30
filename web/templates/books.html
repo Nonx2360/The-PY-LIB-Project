@@ -8,6 +8,7 @@
     </div>
     <div class="card-body">
         <form method="POST" action="{{ url_for('book_add') }}" class="form-inline">
+            {{ csrf_field }}
             <div class="form-group">
                 <label>รหัสหนังสือ</label>
                 <input type="text" name="code" placeholder="T-001" required>
@@ -50,6 +51,7 @@
                     </td>
                     <td>
                         <form method="POST" action="{{ url_for('book_delete', bid=b.id) }}" class="inline-form">
+                            {{ csrf_field }}
                             <button type="submit" class="btn btn-danger btn-sm" title="ลบ" onclick="return confirm('ลบหนังสือ {{ b.title }}?');">
                                 <svg width="14" height="14"><use href="#icon-trash"/></svg>
                             </button>

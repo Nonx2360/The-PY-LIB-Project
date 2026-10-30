@@ -42,6 +42,7 @@
                     </td>
                     <td>
                         <form method="POST" class="inline-form">
+                            {{ csrf_field }}
                             <input type="hidden" name="record_id" value="{{ b.id }}">
                             <input type="hidden" name="book_id" value="{{ b.book_id }}">
                             <button type="submit" class="btn btn-primary btn-sm" onclick="return confirm('คืนหนังสือ {{ b.title }}?')">

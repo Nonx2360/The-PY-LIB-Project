@@ -14,6 +14,7 @@
         </div>
         {% endif %}
         <form method="POST" class="form-grid">
+            {{ csrf_field }}
             <div class="form-group">
                 <label>เลือกสมาชิก</label>
                 <select name="member_id" required id="memberSelect" onchange="updateBorrowInfo()">

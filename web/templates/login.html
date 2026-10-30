@@ -29,6 +29,7 @@
             {% endif %}
             {% endwith %}
             <form method="POST">
+                {{ csrf_field }}
                 <div class="form-group">
                     <label>ชื่อผู้ใช้</label>
                     <input type="text" name="username" placeholder="username" required autofocus>

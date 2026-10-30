@@ -8,6 +8,7 @@
     </div>
     <div class="card-body">
         <form method="POST" class="form-grid">
+            {{ csrf_field }}
             <div class="form-group">
                 <label>ชื่อโรงเรียน</label>
                 <input type="text" name="school_name" value="{{ settings.school_name }}" required>
