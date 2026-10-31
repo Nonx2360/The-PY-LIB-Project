@@ -13,7 +13,8 @@
 - แสดงสถานะคืนช้า พร้อมสีเตือน (เขียว / เหลือง / แดง)
 - หยุดให้บริการ (retire) / คืนสถานะหนังสือได้ โดยประวัติการยืมยังถูกเก็บไว้
 - ส่งออกบัตรสมาชิก PDF, ประวัติยืม-คืน, ประวัติเข้าออก พร้อมฟอนต์ไทย (Sarabun)
-- นำเข้า/ส่งออกหนังสือจากไฟล์ Excel (pandas + openpyxl) — นำเข้ารอบละพันเล่มขึ้นไปได้ (จัดการใน transaction เดียว)
+- นำเข้า/ส่งออกหนังสือจากไฟล์ Excel (pandas + openpyxl) — นำเข้ารอบละพันเล่มขึ้นไปได้ (transaction เดียว ทำงานแบบเบื้องหลัง หน้าต่างไม่ค้าง)
+- ตารางรายการเปิดแบบแบ่งชุด (50 รายการแรก + ปุ่มแสดงเพิ่ม) — แคตตาล็อก 1,000+ เล่มเปิดได้ทันที ไม่ใช้ Windows resource เกิน (กัน crash ของ Tk)
 - UI ทันสมัย, รองรับธีมสว่าง/มืด, Sidebar พร้อม Grouped Navigation
 - Toast notifications, Confirm dialogs, Shared scan window
 - Built-in PDF viewer (PyMuPDF) สำหรับดูบัตรสมาชิก
@@ -189,6 +190,7 @@ THE-PY-LIB/
 │   ├── test_security.py         # Password hashing + QR crypto
 │   ├── test_qr_security.py      # QR payload formats & rejection paths
 │   ├── test_migrations.py       # Schema v1→v2 + book-code dedupe
+│   ├── test_desktop_paging.py   # Capped list-window math (large catalog guard)
 │   ├── test_member_repo.py      # Member CRUD
 │   ├── test_book_repo.py        # Book CRUD
 │   ├── test_borrow_atomic.py    # Atomic borrow/return invariants
@@ -273,7 +275,7 @@ venv\Scripts\python -m unittest discover -s tests
 venv/bin/python -m unittest discover -s tests
 ```
 
-ปัจจุบันมี 111 test cases (15 test files) ครอบคลุม security, repositories, migrations, atomic borrow/return, backups, bulk imports, HTMX partials/analytics และ guards ของเว็บ
+ปัจจุบันมี 117 test cases (16 test files) ครอบคลุม security, repositories, migrations, atomic borrow/return, backups, bulk imports, HTMX partials/analytics, desktop list-paging และ guards ของเว็บ
 
 ---
 

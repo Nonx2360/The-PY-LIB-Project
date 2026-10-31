@@ -1,5 +1,8 @@
 # ui/views/book_view.py
 import os
+import queue
+import threading
+
 import customtkinter as ctk
 from tkinter import filedialog
 
@@ -10,6 +13,7 @@ from db.repositories.base_repo import BaseRepository
 from db.repositories.book_repo import BookRepository
 from services.excel_service import ExcelService
 from ui.widgets.confirm_dialog import show_confirm_dialog
+from ui.widgets.row_window import RowWindow
 from ui.widgets.toast import show_toast
 from core.logger import logger
 
@@ -20,6 +24,8 @@ class BookView(ctk.CTkFrame):
         self.nav = nav
         self.repo = BookRepository()
         self.base = BaseRepository()
+        self._search_job = None
+        self._import_running = False
         self._build()
 
     def _build(self):
@@ -59,8 +65,13 @@ class BookView(ctk.CTkFrame):
         sep.pack(fill="x", pady=12)
 
         theme.subheading(form, "นำเข้าจาก Excel", size=12).pack(anchor="w", pady=(0, 8))
-        theme.secondary_button(form, "เลือกไฟล์ Excel เพื่อนำเข้า", self._import_excel,
-                               height=38).pack(fill="x", pady=(0, 6))
+        self.import_btn = theme.secondary_button(
+            form, "เลือกไฟล์ Excel เพื่อนำเข้า", self._import_excel, height=38)
+        self.import_btn.pack(fill="x", pady=(0, 6))
+        self.import_status = ctk.CTkLabel(form, text="", font=theme.font(11),
+                                          text_color=theme.muted_color(),
+                                          anchor="center")
+        self.import_status.pack(fill="x", pady=(0, 4))
         theme.ghost_button(form, "ดาวน์โหลดแม่แบบ Excel", self._export_template,
                            height=34).pack(fill="x")
 
@@ -76,33 +87,51 @@ class BookView(ctk.CTkFrame):
         self.search_entry = theme.entry(top, placeholder_text="ค้นหา รหัส / ชื่อ",
                                         width=240)
         self.search_entry.pack(side="right")
-        self.search_entry.bind("<KeyRelease>", lambda e: self._display_books())
+        self.search_entry.bind("<KeyRelease>", self._on_search_key)
 
-        self.list_frame = ctk.CTkScrollableFrame(list_card, fg_color="transparent",
-                                                 corner_radius=0)
+        # bounded list window: renders only the first 50 rows plus a
+        # "show more" button — building a row costs ~10 Tk windows, so
+        # rendering all 1000+ rows at once froze the app and could exhaust
+        # Windows GDI handles (Tk then panics — uncatchable).
+        self.list_frame = RowWindow(list_card, empty_note="ไม่พบหนังสือ")
+        self.list_frame.on_status = self._update_count
         self.list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
         self._display_books()
 
     # ================= data =================
-    def _display_books(self):
-        for w in self.list_frame.winfo_children():
-            w.destroy()
+    def _update_count(self, _shown, total):
+        if not self._alive():
+            return
+        self.count_label.configure(text=f"รายการหนังสือ ({total})")
 
-        books = self.repo.get_all()
+    def _alive(self):
+        """False once the view has been destroyed (user navigated away)."""
+        try:
+            return bool(self.winfo_exists())
+        except Exception:
+            return False
+
+    def _on_search_key(self, _e=None):
+        # rebuilds are bounded but cost a few hundred ms — debounce so a
+        # burst of keystrokes doesn't queue several rebuilds
+        if self._search_job is not None:
+            self.after_cancel(self._search_job)
+        self._search_job = self.after(350, self._search_now)
+
+    def _search_now(self):
+        self._search_job = None
+        self._display_books()
+
+    def _display_books(self):
+        self._search_job = None
+        # newest first, so a freshly imported batch sits on the first page
+        books = self.repo.fetchall("SELECT * FROM books ORDER BY id DESC")
         q = self.search_entry.get().strip().lower()
         if q:
             books = [b for b in books if q in (b[1] or "").lower() or q in (b[2] or "").lower()]
 
-        self.count_label.configure(text=f"รายการหนังสือ ({len(books)})")
-
-        if not books:
-            ctk.CTkLabel(self.list_frame, text="ไม่พบหนังสือ", font=theme.font(14),
-                         text_color=theme.muted_color()).pack(pady=24)
-            return
-
-        for b in books:
-            self._book_row(b)
+        self.list_frame.render(books, self._book_row)
 
     def _book_row(self, b):
         row = theme.card(self.list_frame, corner_radius=10)
@@ -252,34 +281,75 @@ class BookView(ctk.CTkFrame):
             show_toast(self, f"เกิดข้อผิดพลาด: {e}", "red")
 
     def _import_excel(self):
+        if self._import_running:
+            show_toast(self, "กำลังนำเข้าอยู่ กรุณารอจนเสร็จก่อน", "amber")
+            return
         filename = filedialog.askopenfilename(
             filetypes=[("Excel files", "*.xlsx")],
             title="เลือกไฟล์ Excel ที่ต้องการนำเข้า")
         if not filename:
             return
+
+        # Reading the workbook + inserting it (one transaction) can take a
+        # few seconds for a 1000-row file; run it on a worker thread so the
+        # window never freezes. Results travel back through a queue that
+        # this view polls with after() on the Tk thread — tkinter widgets
+        # are never touched from the worker thread.
+        self._import_running = True
+        self.import_btn.configure(state="disabled")
+        self.import_status.configure(text="กำลังอ่านและนำเข้าข้อมูล...")
+
+        results = queue.Queue()
+        threading.Thread(target=self._import_worker, args=(filename, results),
+                         daemon=True, name="excel-import").start()
+        self._poll_import(results)
+
+    def _import_worker(self, filename, results):
         try:
+            logger.info("import excel: reading workbook (background thread)")
             books = ExcelService.read_books_from_excel(filename)
+            logger.info("import excel: parsed rows=%d", len(books))
+            ok, skipped = 0, 0
+            if books:
+                # single BEGIN IMMEDIATE transaction via add_many —
+                # one commit for the whole batch, duplicates skipped
+                ok, skipped = self.repo.add_many(
+                    [(b["code"], b["title"]) for b in books])
         except ValueError as e:
-            show_toast(self, str(e), "red")
-            return
+            logger.warning("import excel rejected: %s", e)
+            results.put(("bad-template", str(e)))
         except Exception as e:
-            logger.error(f"import excel read failed: {e}", exc_info=True)
-            show_toast(self, "อ่านไฟล์ไม่สำเร็จ กรุณาตรวจสอบรูปแบบไฟล์", "red")
-            return
+            logger.error("import excel failed: %s", e, exc_info=True)
+            results.put(("error", "นำเข้าไม่สำเร็จ กรุณาลองใหม่"))
+        else:
+            logger.info("import excel: inserted=%d skipped=%d", ok, skipped)
+            results.put(("done", (ok, skipped)))
 
-        # One transaction for the whole batch (add_many skips duplicates
-        # itself) — a 1000-row import is a single commit, not a thousand.
+    def _poll_import(self, results):
+        if not self._alive():
+            return
         try:
-            ok, skipped = self.repo.add_many(
-                [(b["code"], b["title"]) for b in books])
-        except Exception as e:
-            logger.error(f"import excel failed: {e}", exc_info=True)
-            show_toast(self, "นำเข้าไม่สำเร็จ กรุณาลองใหม่", "red")
+            kind, payload = results.get_nowait()
+        except queue.Empty:
+            self.after(80, lambda: self._poll_import(results))
             return
 
-        msg = f"นำเข้าสำเร็จ: {ok} รายการ"
-        if skipped:
-            msg += f" (ข้ามซ้ำ/ไม่สมบูรณ์ {skipped} รายการ)"
-        show_toast(self, msg, "green" if ok > 0 else "red")
-        if ok > 0:
-            self._display_books()
+        self._import_running = False
+        if not self._alive():
+            return
+        self.import_btn.configure(state="normal")
+        self.import_status.configure(text="")
+
+        if kind == "done":
+            ok, skipped = payload
+            msg = f"นำเข้าสำเร็จ: {ok} รายการ"
+            if skipped:
+                msg += f" (ข้ามซ้ำ/ไม่สมบูรณ์ {skipped} รายการ)"
+            logger.info("import excel: refresh list after insert=%d", ok)
+            show_toast(self, msg, "green" if ok > 0 else "red")
+            if ok > 0:
+                self._display_books()
+        elif kind == "bad-template":
+            show_toast(self, payload, "red")
+        else:
+            show_toast(self, payload, "red")

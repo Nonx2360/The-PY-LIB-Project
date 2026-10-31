@@ -13,6 +13,7 @@ from db.repositories.member_repo import MemberRepository
 from services.qr_service import QRService
 from services.pdf_service import PDFService
 from ui.widgets.confirm_dialog import show_confirm_dialog
+from ui.widgets.row_window import RowWindow
 from ui.widgets.toast import show_toast
 from ui.widgets.pdf_viewer import PDFViewerWindow
 from core.logger import logger
@@ -79,18 +80,32 @@ class MemberView(ctk.CTkFrame):
         self.search_entry = theme.entry(top, placeholder_text="ค้นหา ชื่อ / ชั้น / เลขที่",
                                         width=240)
         self.search_entry.pack(side="right")
-        self.search_entry.bind("<KeyRelease>", lambda e: self._display_members())
+        self.search_entry.bind("<KeyRelease>", self._on_search_key)
 
-        self.list_frame = ctk.CTkScrollableFrame(list_card, fg_color="transparent",
-                                                 corner_radius=0)
+        # bounded list window (see ui/widgets/row_window.py)
+        self.list_frame = RowWindow(list_card, empty_note="ไม่พบสมาชิก")
+        self.list_frame.on_status = self._update_count
         self.list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
         self._display_members()
 
     # ================= data =================
+    def _update_count(self, _shown, total):
+        if not self.winfo_exists():
+            return
+        self.count_label.configure(text=f"รายชื่อสมาชิก ({total})")
+
+    def _on_search_key(self, _e=None):
+        if getattr(self, "_search_job", None) is not None:
+            self.after_cancel(self._search_job)
+        self._search_job = self.after(350, self._search_now)
+
+    def _search_now(self):
+        self._search_job = None
+        self._display_members()
+
     def _display_members(self):
-        for w in self.list_frame.winfo_children():
-            w.destroy()
+        self._search_job = None
 
         members = self.repo.get_all()
         q = self.search_entry.get().strip().lower()
@@ -98,15 +113,7 @@ class MemberView(ctk.CTkFrame):
             members = [m for m in members if q in (m[1] or "").lower()
                        or q in (m[2] or "").lower() or q in (m[3] or "").lower()]
 
-        self.count_label.configure(text=f"รายชื่อสมาชิก ({len(members)})")
-
-        if not members:
-            ctk.CTkLabel(self.list_frame, text="ไม่พบสมาชิก", font=theme.font(14),
-                         text_color=theme.muted_color()).pack(pady=24)
-            return
-
-        for m in members:
-            self._member_row(m)
+        self.list_frame.render(members, self._member_row)
 
     def _member_row(self, m):
         mid, name, grade, number, reg, exp, qr_data, qr_path = m

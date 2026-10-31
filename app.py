@@ -206,4 +206,16 @@ class LibraryApp(ctk.CTk):
 
     # ================= run =================
     def run(self):
-        self.mainloop()
+        # Tk swallows exceptions raised inside widget callbacks (they go to
+        # stderr only, and a crashed callback normally goes unnoticed).
+        # Route them into the log so any crash leaves a breadcrumb with the
+        # full traceback.
+        def _report_callback_exception(exc, val, tb):
+            logger.error("UI callback exception", exc_info=(exc, val, tb))
+        self.report_callback_exception = _report_callback_exception
+
+        try:
+            self.mainloop()
+        except BaseException:
+            logger.critical("LibraryApp crashed", exc_info=True)
+            raise
