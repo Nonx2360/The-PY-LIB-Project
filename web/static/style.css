@@ -390,3 +390,26 @@ input:focus-visible, select:focus-visible {
 @media (max-width: 1100px) {
     .chart-grid { grid-template-columns: 1fr; }
 }
+
+/* ── list pagination (1000+ row catalogs) + Excel import row ── */
+.pager {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; flex-wrap: wrap; padding-top: 12px; margin-top: 4px;
+}
+.pager-info { font-size: 13px; color: var(--ink-2); }
+.pager-btns { display: flex; gap: 4px; flex-wrap: wrap; }
+.page-btn {
+    min-width: 30px; padding: 5px 9px; text-align: center; text-decoration: none;
+    border: 1px solid var(--line); border-radius: 8px;
+    background: var(--surface); color: var(--ink-2); font-size: 13px;
+}
+.page-btn:hover { background: var(--surface-hover); color: var(--ink); }
+.page-active {
+    background: var(--navy-wash); border-color: var(--navy);
+    color: var(--navy); font-weight: 600;
+}
+.pager-gap { color: var(--ink-3); align-self: center; font-size: 12px; padding: 0 3px; }
+.import-row {
+    display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
+    margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line);
+}

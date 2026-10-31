@@ -1,3 +1,4 @@
+{% from "partials/_pager.html" import pager %}
 <div class="table-wrap" id="booksTableWrap">
     <table class="data-table" id="booksTable">
         <thead>
@@ -62,4 +63,5 @@
             {% endif %}
         </tbody>
     </table>
+    {{ pager(p) }}
 </div>

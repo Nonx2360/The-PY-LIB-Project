@@ -262,20 +262,24 @@ class BookView(ctk.CTkFrame):
         except ValueError as e:
             show_toast(self, str(e), "red")
             return
+        except Exception as e:
+            logger.error(f"import excel read failed: {e}", exc_info=True)
+            show_toast(self, "อ่านไฟล์ไม่สำเร็จ กรุณาตรวจสอบรูปแบบไฟล์", "red")
+            return
 
-        ok, err = 0, []
-        for b in books:
-            existing = self.repo.get_by_code(b["code"])
-            if existing:
-                err.append(f"รหัส {b['code']} มีอยู่แล้ว")
-                continue
-            try:
-                self.repo.add(b["code"], b["title"], status="ว่าง")
-                ok += 1
-            except Exception as e:
-                err.append(str(e))
+        # One transaction for the whole batch (add_many skips duplicates
+        # itself) — a 1000-row import is a single commit, not a thousand.
+        try:
+            ok, skipped = self.repo.add_many(
+                [(b["code"], b["title"]) for b in books])
+        except Exception as e:
+            logger.error(f"import excel failed: {e}", exc_info=True)
+            show_toast(self, "นำเข้าไม่สำเร็จ กรุณาลองใหม่", "red")
+            return
 
-        msg = f"นำเข้าสำเร็จ: {ok} รายการ" + (f"\n{chr(10).join(err[:5])}" if err else "")
+        msg = f"นำเข้าสำเร็จ: {ok} รายการ"
+        if skipped:
+            msg += f" (ข้ามซ้ำ/ไม่สมบูรณ์ {skipped} รายการ)"
         show_toast(self, msg, "green" if ok > 0 else "red")
         if ok > 0:
             self._display_books()

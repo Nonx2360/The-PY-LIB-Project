@@ -4,7 +4,7 @@
 {% block content %}
 <div class="card">
     <div class="card-header">
-        <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-history"/></svg> ประวัติการยืม-คืน</h3>
+        <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-history"/></svg> ประวัติการยืม-คืน ({{ total }} รายการ)</h3>
         <form class="table-filter" action="{{ url_for('history') }}"
               hx-get="{{ url_for('history') }}"
               hx-target="#historyTableWrap" hx-swap="outerHTML"

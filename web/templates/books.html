@@ -21,11 +21,28 @@
                 <svg width="16" height="16" class="icon-inline"><use href="#icon-plus"/></svg> เพิ่มหนังสือ
             </button>
         </form>
+        <div class="import-row">
+            <form method="POST" action="{{ url_for('book_import') }}"
+                  enctype="multipart/form-data" class="form-inline"
+                  data-confirm="นำเข้าหนังสือจาก Excel — รหัสที่ซ้ำและแถวไม่สมบูรณ์จะถูกข้าม ยืนยันหรือไม่?">
+                {{ csrf_field }}
+                <div class="form-group">
+                    <label>นำเข้าจากไฟล์ Excel (.xlsx) — สูงสุด 5,000 แถว/ไฟล์</label>
+                    <input type="file" name="file" accept=".xlsx" required>
+                </div>
+                <button type="submit" class="btn btn-secondary">
+                    <svg width="16" height="16" class="icon-inline"><use href="#icon-upload"/></svg> นำเข้า Excel
+                </button>
+            </form>
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('book_template') }}">
+                <svg width="14" height="14" class="icon-inline"><use href="#icon-download"/></svg> ดาวน์โหลดแม่แบบ
+            </a>
+        </div>
     </div>
 </div>
 <div class="card">
     <div class="card-header">
-        <h3>หนังสือทั้งหมด ({{ books|length }} เล่ม)</h3>
+        <h3>หนังสือทั้งหมด ({{ total }} เล่ม)</h3>
         <form class="table-filter" action="{{ url_for('books') }}"
               hx-get="{{ url_for('books') }}"
               hx-target="#booksTableWrap" hx-swap="outerHTML"

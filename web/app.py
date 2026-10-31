@@ -1,11 +1,13 @@
 # web/app.py - Flask web UI for THE PY-LIB
+import io
 import os
 import sys
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from flask import Flask, render_template, request, redirect, url_for, jsonify, session, flash
+from flask import (Flask, render_template, request, redirect, url_for,
+                   jsonify, session, flash, send_file)
 from config import settings
 from config.constants import (BOOK_STATUS_AVAILABLE, BOOK_STATUS_BORROWED,
                               BOOK_STATUS_RETIRED)
@@ -16,6 +18,8 @@ from db.repositories.book_repo import BookRepository
 from db.repositories.borrow_repo import BorrowRepository, BorrowError
 from db.repositories.access_repo import AccessRepository
 from db.repositories.admin_repo import AdminRepository
+from services.excel_service import ExcelService
+from services.excel_service import MAX_ROWS as IMPORT_MAX_ROWS
 from services.qr_service import QRService
 from services.pdf_service import PDFService
 from core.logger import logger
@@ -38,6 +42,10 @@ LIMITS = {
     "member_name": 120, "member_grade": 40, "member_number": 20,
     "book_code": 40, "book_title": 200, "school_name": 80, "logo_path": 260,
 }
+
+# List pagination: every list page shows PAGE_SIZE rows and gets a server-
+# computed pager (lazy-per-page loading keeps 1000+ catalogs responsive).
+PAGE_SIZE = 50
 
 
 def _clean(value, limit):
@@ -71,7 +79,10 @@ def create_app():
         # NOTE: set True behind HTTPS (see docs/SECURITY.md § deployment)
         SESSION_COOKIE_SECURE=False,
         PERMANENT_SESSION_LIFETIME=timedelta(hours=4),
-        MAX_CONTENT_LENGTH=1024 * 1024,
+        # Excel bulk imports: a 5,000-row .xlsx is well under this — the cap
+        # is a DoS guard, not a feature limit. Exceeding it hits the 413
+        # handler below, which tells the user to split the file.
+        MAX_CONTENT_LENGTH=8 * 1024 * 1024,
     )
 
     @app.route("/assets/<path:filename>")
@@ -126,6 +137,45 @@ def create_app():
                 return "", 403
             return redirect(request.referrer or url_for("dashboard"))
         return None
+
+    @app.errorhandler(413)
+    def _payload_too_large(_e):
+        # MAX_CONTENT_LENGTH exceeded (e.g. an oversized Excel upload)
+        flash("ไฟล์ใหญ่เกิน 8 MB — กรุณาแบ่งการนำเข้าเป็นหลายไฟล์", "error")
+        return redirect(url_for("books"))
+
+    def _pager(endpoint, page, pages, target, total, noun, **fixed):
+        """Build the pagination model the list partials render.
+
+        Keeps first/last pages always visible, two neighbours around the
+        current one, and '…' gaps in between. `fixed` carries the query
+        context (q, status) that every page link must preserve — empty
+        values are dropped so the URL stays clean.
+        """
+        items = []
+        wanted = sorted({1, pages}
+                        | set(range(max(1, page - 2), min(pages, page + 2) + 1)))
+        last = 0
+        for p in wanted:
+            if last and p - last > 1:
+                items.append({"gap": True})
+            args = {k: v for k, v in fixed.items() if v not in ("", None)}
+            args["page"] = p
+            items.append({"page": p, "active": p == page,
+                          "url": url_for(endpoint, **args)})
+            last = p
+
+        def _link(p):
+            args = {k: v for k, v in fixed.items() if v not in ("", None)}
+            args["page"] = p
+            return url_for(endpoint, **args)
+
+        return {
+            "items": items, "page": page, "pages": pages,
+            "target": target, "total": total, "noun": noun,
+            "prev": _link(page - 1) if page > 1 else None,
+            "next": _link(page + 1) if page < pages else None,
+        }
 
     # ── Auth ──────────────────────────────────────────────
     @app.route("/login", methods=["GET", "POST"])
@@ -182,21 +232,27 @@ def create_app():
     @login_required
     def members():
         q = _clean(request.args.get("q"), 80)
-        sql = ("SELECT id, name, grade, number, register_date, expire_date, qrcode_path "
-               "FROM members")
-        params = ()
+        page = _int_in(request.args.get("page"), 1, 10**6, 1)
+        cond_sql, cond_params = "", ()
         if q:
             like = f"%{q}%"
-            sql += " WHERE name LIKE ? OR grade LIKE ? OR number LIKE ?"
-            params = (like, like, like)
-        sql += " ORDER BY id DESC"
-        rows = member_repo.fetchall(sql, params)
+            cond_sql = " WHERE name LIKE ? OR grade LIKE ? OR number LIKE ?"
+            cond_params = (like, like, like)
+        total = member_repo.fetchone(
+            "SELECT COUNT(*) FROM members" + cond_sql, cond_params)[0]
+        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+        page = min(max(1, page), pages)
+        rows = member_repo.fetchall(
+            "SELECT id, name, grade, number, register_date, expire_date, qrcode_path "
+            "FROM members" + cond_sql + " ORDER BY id DESC LIMIT ? OFFSET ?",
+            (*cond_params, PAGE_SIZE, (page - 1) * PAGE_SIZE))
         members_ = _rows_to_dicts(rows, ["id", "name", "grade", "number",
                                          "register_date", "expire_date", "qrcode_path"])
+        pager = _pager("members", page, pages, "membersTableWrap", total, "คน", q=q)
+        ctx = dict(members=members_, q=q, total=total, pages=pages, p=pager)
         if request.headers.get("HX-Request") == "true":
-            return render_template("partials/_members_table.html",
-                                   members=members_, q=q)
-        return render_template("members.html", members=members_, q=q)
+            return render_template("partials/_members_table.html", **ctx)
+        return render_template("members.html", **ctx)
 
     @app.route("/members/add", methods=["POST"])
     @login_required
@@ -268,6 +324,7 @@ def create_app():
     def books():
         q = _clean(request.args.get("q"), 80)
         status = (request.args.get("status") or "").strip()
+        page = _int_in(request.args.get("page"), 1, 10**6, 1)
         where, params = [], []
         if q:
             like = f"%{q}%"
@@ -276,18 +333,25 @@ def create_app():
         if status:
             where.append("bo.status = ?")
             params.append(status)
-        sql = """SELECT bo.id, bo.code, bo.title, bo.status,
-                        (SELECT COUNT(*) FROM borrow_log bl WHERE bl.book_id=bo.id) AS history
-                 FROM books bo"""
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY bo.id DESC"
-        rows = book_repo.fetchall(sql, tuple(params))
+        cond_sql = (" WHERE " + " AND ".join(where)) if where else ""
+        total = book_repo.fetchone(
+            "SELECT COUNT(*) FROM books bo" + cond_sql, tuple(params))[0]
+        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+        page = min(max(1, page), pages)
+        rows = book_repo.fetchall(
+            """SELECT bo.id, bo.code, bo.title, bo.status,
+                      (SELECT COUNT(*) FROM borrow_log bl WHERE bl.book_id=bo.id) AS history
+               FROM books bo""" + cond_sql +
+            " ORDER BY bo.id DESC LIMIT ? OFFSET ?",
+            (*params, PAGE_SIZE, (page - 1) * PAGE_SIZE))
         books_ = _rows_to_dicts(rows, ["id", "code", "title", "status", "history"])
+        pager = _pager("books", page, pages, "booksTableWrap", total, "เล่ม",
+                       q=q, status=status)
+        ctx = dict(books=books_, q=q, status=status,
+                   total=total, pages=pages, p=pager)
         if request.headers.get("HX-Request") == "true":
-            return render_template(
-                "partials/_books_table.html", books=books_, q=q, status=status)
-        return render_template("books.html", books=books_, q=q, status=status)
+            return render_template("partials/_books_table.html", **ctx)
+        return render_template("books.html", **ctx)
 
     @app.route("/books/add", methods=["POST"])
     @login_required
@@ -305,6 +369,82 @@ def create_app():
         logger.info("Web: book added: code=%s", code)
         flash("เพิ่มหนังสือสำเร็จ", "success")
         return redirect(url_for("books"))
+
+    @app.route("/books/import", methods=["POST"])
+    @login_required
+    def book_import():
+        """Bulk import from the Thai-template .xlsx (1000+ rows is normal).
+
+        Even huge imports are safe here because everything lands in ONE
+        transaction (book_repo.add_many): one commit, duplicates skipped,
+        never a partial catalog on error.
+        """
+        file = request.files.get("file")
+        if file is None or not file.filename:
+            flash("กรุณาเลือกไฟล์ Excel (.xlsx)", "error")
+            return redirect(url_for("books"))
+        if not file.filename.lower().endswith(".xlsx"):
+            flash("รองรับเฉพาะไฟล์ .xlsx — ใช้แม่แบบที่ระบบมีให้", "error")
+            return redirect(url_for("books"))
+        try:
+            # Werkzeug's SpooledTemporaryFile (py3.10) lacks .seekable(),
+            # which openpyxl/zipfile needs — buffer the upload into BytesIO
+            # first (bounded by MAX_CONTENT_LENGTH, so this stays small).
+            payload = io.BytesIO(file.read())
+            rows = ExcelService.read_books_from_excel(payload)
+        except ValueError as exc:
+            flash(str(exc), "error")
+            return redirect(url_for("books"))
+        except Exception:
+            logger.error("Web: excel import read failed", exc_info=True)
+            flash("อ่านไฟล์ไม่สำเร็จ กรุณาตรวจสอบรูปแบบไฟล์", "error")
+            return redirect(url_for("books"))
+        if not rows:
+            flash("ไฟล์ไม่มีข้อมูลหนังสือที่ถูกต้อง", "error")
+            return redirect(url_for("books"))
+
+        # Enforce the same field limits the manual form applies
+        clean, invalid = [], 0
+        for row in rows:
+            code = _clean(str(row.get("code", "")), LIMITS["book_code"])
+            title = _clean(str(row.get("title", "")), LIMITS["book_title"])
+            if not code or not title:
+                invalid += 1
+                continue
+            clean.append((code, title))
+        try:
+            inserted, skipped_existing = book_repo.add_many(clean)
+        except sqlite3.Error:
+            logger.error("Web: excel import failed", exc_info=True)
+            flash("นำเข้าไม่สำเร็จ กรุณาลองใหม่", "error")
+            return redirect(url_for("books"))
+
+        msg = f"นำเข้าหนังสือสำเร็จ {inserted} เล่ม"
+        notes = []
+        if skipped_existing:
+            notes.append(f"รหัสซ้ำข้าม {skipped_existing} รายการ")
+        if invalid:
+            notes.append(f"แถวไม่สมบูรณ์ {invalid} แถว")
+        if notes:
+            msg += " (" + " • ".join(notes) + ")"
+        logger.info("Web: excel import: inserted=%d skipped=%d invalid=%d",
+                    inserted, skipped_existing, invalid)
+        flash(msg, "success" if inserted else "warning")
+        return redirect(url_for("books"))
+
+    @app.route("/books/template")
+    @login_required
+    def book_template():
+        """Download the import template (same columns as ExcelService reads)."""
+        buf = io.BytesIO()
+        ExcelService.generate_template_df().to_excel(buf, index=False)
+        buf.seek(0)
+        return send_file(
+            buf,
+            mimetype=("application/vnd.openxmlformats-"
+                      "officedocument.spreadsheetml.sheet"),
+            as_attachment=True,
+            download_name="book_import_template.xlsx")
 
     @app.route("/books/<int:bid>/delete", methods=["POST"])
     @login_required
@@ -493,25 +633,34 @@ def create_app():
     @login_required
     def history():
         q = _clean(request.args.get("q"), 80)
-        sql = """SELECT m.name, m.grade, b.code, b.title,
-                        bl.borrow_date, bl.return_due, bl.returned
-                 FROM borrow_log bl
+        page = _int_in(request.args.get("page"), 1, 10**6, 1)
+        joins = """FROM borrow_log bl
                  JOIN members m ON bl.member_id=m.id
                  JOIN books b ON bl.book_id=b.id"""
-        params = ()
+        cond_sql, cond_params = "", ()
         if q:
             like = f"%{q}%"
-            sql += (" WHERE m.name LIKE ? OR m.grade LIKE ? "
-                    "OR b.code LIKE ? OR b.title LIKE ?")
-            params = (like, like, like, like)
-        sql += " ORDER BY bl.id DESC"
-        rows = borrow_repo.fetchall(sql, params)
+            cond_sql = (" WHERE m.name LIKE ? OR m.grade LIKE ? "
+                        "OR b.code LIKE ? OR b.title LIKE ?")
+            cond_params = (like, like, like, like)
+        total = borrow_repo.fetchone(
+            "SELECT COUNT(*) " + joins + cond_sql, cond_params)[0]
+        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
+        page = min(max(1, page), pages)
+        rows = borrow_repo.fetchall(
+            """SELECT m.name, m.grade, b.code, b.title,
+                      bl.borrow_date, bl.return_due, bl.returned
+               """ + joins + cond_sql +
+            " ORDER BY bl.id DESC LIMIT ? OFFSET ?",
+            (*cond_params, PAGE_SIZE, (page - 1) * PAGE_SIZE))
         records = _rows_to_dicts(rows, ["name", "grade", "code", "title",
                                         "borrow_date", "return_due", "returned"])
+        pager = _pager("history", page, pages, "historyTableWrap", total,
+                       "รายการ", q=q)
+        ctx = dict(records=records, q=q, total=total, pages=pages, p=pager)
         if request.headers.get("HX-Request") == "true":
-            return render_template("partials/_history_table.html",
-                                   records=records, q=q)
-        return render_template("history.html", records=records, q=q)
+            return render_template("partials/_history_table.html", **ctx)
+        return render_template("history.html", **ctx)
 
     # ── Access History + Recording ──────────────────────────
     @app.route("/access")

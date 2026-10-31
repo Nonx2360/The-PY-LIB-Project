@@ -13,7 +13,7 @@
 - แสดงสถานะคืนช้า พร้อมสีเตือน (เขียว / เหลือง / แดง)
 - หยุดให้บริการ (retire) / คืนสถานะหนังสือได้ โดยประวัติการยืมยังถูกเก็บไว้
 - ส่งออกบัตรสมาชิก PDF, ประวัติยืม-คืน, ประวัติเข้าออก พร้อมฟอนต์ไทย (Sarabun)
-- นำเข้า/ส่งออกหนังสือจากไฟล์ Excel (pandas + openpyxl)
+- นำเข้า/ส่งออกหนังสือจากไฟล์ Excel (pandas + openpyxl) — นำเข้ารอบละพันเล่มขึ้นไปได้ (จัดการใน transaction เดียว)
 - UI ทันสมัย, รองรับธีมสว่าง/มืด, Sidebar พร้อม Grouped Navigation
 - Toast notifications, Confirm dialogs, Shared scan window
 - Built-in PDF viewer (PyMuPDF) สำหรับดูบัตรสมาชิก
@@ -25,6 +25,8 @@
 - บันทึกเข้า-ออกผ่านเว็บ (สลับเข้า/ออกอัตโนมัติ)
 - สแกนบัตรสมาชิกจากกล้องเว็บเบราว์เซอร์ (jsQR vendored) — ถอดรหัสเฉพาะฝั่งเซิร์ฟเวอร์
 - หยุดให้บริการ/กลับมา และลบถาวรแบบ 2 ขั้นตอน (retire → purge) พร้อมเก็บอย่างปลอดภัย
+- นำเข้าหนังสือจากไฟล์ Excel ออนเว็บ (สูงสุด 5,000 แถว/ไฟล์) พร้อมดาวน์โหลดแม่แบบ — รหัสซ้ำ/แถวไม่สมบูรณ์ถูกข้ามและรายงานผล
+- ตารางหนังสือ/สมาชิก/ประวัติแบ่งหน้า server-side (50 แถว/หน้า) — แคตตาล็อก 1,000+ เล่มเปิดเร็วตลอด
 - SVG icons (Lucide), School logo, Search/filter ทุกหน้า
 - Responsive design, รองรับ Light/Dark mode
 - Frontend stack vendored ในเครื่อง (ทำงานได้แม้ไม่มีอินเทอร์เน็ต) — ดู `web/static/vendor/README.md`:
@@ -152,7 +154,7 @@ THE-PY-LIB/
 │       ├── scan_window.py       # Shared camera QR scan window
 │       └── pdf_viewer.py        # Built-in PDF viewer (PyMuPDF)
 ├── web/
-│   ├── app.py                   # Flask web application (routes + guards + /api/analytics)
+│   ├── app.py                   # Flask web application (routes, guards, pagination, /api/analytics, Excel import)
 │   ├── csrf.py                  # Per-session CSRF tokens (form field หรือ X-CSRF-Token header)
 │   ├── static/
 │   │   ├── style.css            # Web UI design system
@@ -196,6 +198,7 @@ THE-PY-LIB/
 │   ├── test_web_scan.py         # Badge scanner endpoint
 │   ├── test_web_delete_guards.py# History-bearing delete refusals
 │   ├── test_web_book_retire.py  # Retire/restore/purge flow
+│   ├── test_web_bulk.py         # 1000-row Excel import + list pagination
 │   ├── test_web_partials.py     # HTMX partials + header CSRF + analytics
 │   └── test_web_pages_smoke.py  # Every authenticated page renders 200
 ├── docs/
@@ -243,7 +246,7 @@ THE-PY-LIB/
 | SQL Injection | Parameterized queries ทุกที่, status เปรียบเทียบผ่านพารามิเตอร์ |
 | Data integrity | FK enforcement, UNIQUE index บน books.code, borrow_log CHECK (returned IN (0,1)), borrow/return เป็น single IMMEDIATE transaction |
 | Thread safety | `BaseRepository` ใช้ connection-per-query + `threading.Lock`, `transact()` สำหรับ multi-statement |
-| Schema migrations | `PRAGMA user_version` (v1 legacy → v2 constraints) รันอัตโนมัติและ idempotent ทุกบูต |
+| Schema migrations | `PRAGMA user_version` (v1 legacy → v2 constraints → v3 bulk-import indexes) รันอัตโนมัติและ idempotent ทุกบูต |
 | Secrets | `.env` (gitignored), ป้องกันค่า placeholder, การเปลี่ยนมี runbook ใน `docs/SECURITY.md` |
 
 ---
@@ -270,7 +273,7 @@ venv\Scripts\python -m unittest discover -s tests
 venv/bin/python -m unittest discover -s tests
 ```
 
-ปัจจุบันมี 99 test cases (14 test files) ครอบคลุม security, repositories, migrations, atomic borrow/return, backups, HTMX partials/analytics และ guards ของเว็บ
+ปัจจุบันมี 111 test cases (15 test files) ครอบคลุม security, repositories, migrations, atomic borrow/return, backups, bulk imports, HTMX partials/analytics และ guards ของเว็บ
 
 ---
 

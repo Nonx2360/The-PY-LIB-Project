@@ -29,7 +29,7 @@
 </div>
 <div class="card">
     <div class="card-header">
-        <h3>รายชื่อสมาชิก ({{ members|length }} คน)</h3>
+        <h3>รายชื่อสมาชิก ({{ total }} คน)</h3>
         <form class="table-filter" action="{{ url_for('members') }}"
               hx-get="{{ url_for('members') }}"
               hx-target="#membersTableWrap" hx-swap="outerHTML"

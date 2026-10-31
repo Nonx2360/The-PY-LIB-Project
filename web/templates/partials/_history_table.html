@@ -1,3 +1,4 @@
+{% from "partials/_pager.html" import pager %}
 <div class="table-wrap" id="historyTableWrap">
     <table class="data-table" id="historyTable">
         <thead>
@@ -39,4 +40,5 @@
             {% endif %}
         </tbody>
     </table>
+    {{ pager(p) }}
 </div>

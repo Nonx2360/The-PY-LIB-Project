@@ -4,7 +4,9 @@
 # every connection schema state is tracked with `PRAGMA user_version`.
 #   version 1 = original legacy layout (pre-refactor tables)
 #   version 2 = adds data-integrity constraints (see MIGRATION notes below)
-#   Fresh DBs are created directly in the v2 layout.
+#   version 3 = bulk-import era indexes on borrow_log (book_id/member_id) —
+#               books-page history counts + lists survive 1000+ row catalogs
+#   Fresh DBs are created directly in the current layout.
 # Any new schema change = bump SCHEMA_VERSION + add a migration step here.
 #
 # Admin bootstrap policy:
@@ -22,7 +24,7 @@ from datetime import datetime
 
 from config.constants import DB_PATH
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 _CREDS_FILE = "INITIAL_ADMIN_PASSWORD.txt"
 _KNOWN_DEFAULT_PASSWORD = "admin123"
@@ -80,6 +82,21 @@ def _create_final_schema(conn):
             action TEXT,
             FOREIGN KEY (member_id) REFERENCES members (id))''')
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_books_code ON books(code)")
+    _create_bulk_indexes(conn)
+
+
+def _create_bulk_indexes(conn):
+    """v3 indexes: keep the books page fast when the catalog is 1000+ rows.
+
+    * borrow_log(book_id) — the per-book history counts on /books and the
+      member-delete guard are correlated subqueries; without the index each
+      one is a full borrow_log scan.
+    * borrow_log(member_id) — borrow/return/member-delete lookups by member.
+    """
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_borrow_log_book "
+                 "ON borrow_log(book_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_borrow_log_member "
+                 "ON borrow_log(member_id)")
 
 
 def _create_base_schema(conn):
@@ -174,6 +191,22 @@ def _migrate_v2(conn, log):
         conn.execute(f"PRAGMA foreign_keys={1 if was_fk_on else 0}")
 
 
+def _migrate_v3(conn, log):
+    """v2 -> v3: bulk-import era indexes.
+
+    Index-only change (no table rebuild, no data rewrite), so an existing
+    catalog with 1000+ books migrates in milliseconds. Idempotent.
+    """
+    conn.isolation_level = None
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        _create_bulk_indexes(conn)
+        conn.execute("COMMIT")
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+
+
 def _apply_migrations(conn, log=None):
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version >= SCHEMA_VERSION:
@@ -191,9 +224,16 @@ def _apply_migrations(conn, log=None):
             return
     if version == 1:
         _migrate_v2(conn, log)
+        version = 2
+        conn.execute("PRAGMA user_version = 2")
+        if log:
+            log("db: migrated schema v1 -> v2 (constraints + unique codes)")
+    if version == 2:
+        _migrate_v3(conn, log)
+        version = 3
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         if log:
-            log(f"db: migrated schema v1 -> v{SCHEMA_VERSION} (constraints + unique codes)")
+            log(f"db: migrated schema v2 -> v{SCHEMA_VERSION} (bulk-import indexes)")
     # future versions land here
 
 

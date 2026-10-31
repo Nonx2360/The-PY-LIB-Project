@@ -86,9 +86,20 @@ class TestMigrations(unittest.TestCase):
 
     # ---------------- upgrade results ----------------
 
-    def test_user_version_is_2(self):
-        version = self._user_version()
-        self.assertEqual(version, 2)
+    def test_user_version_reaches_current(self):
+        self.assertEqual(self._user_version(), self.schema_mod.SCHEMA_VERSION)
+
+    def test_bulk_indexes_exist_after_upgrade(self):
+        # v3: keep the books page fast on 1000+ catalogs
+        conn = sqlite3.connect(self.db_path)
+        try:
+            names = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='index' AND tbl_name='borrow_log'").fetchall()}
+        finally:
+            conn.close()
+        self.assertIn("idx_borrow_log_book", names)
+        self.assertIn("idx_borrow_log_member", names)
 
     def _user_version(self):
         conn = sqlite3.connect(self.db_path)
@@ -159,11 +170,11 @@ class TestMigrations(unittest.TestCase):
 
     def test_migrations_are_idempotent(self):
         self.schema_mod.init_db(log=lambda *a, **k: None)
-        self.assertEqual(self._user_version(), 2)
+        self.assertEqual(self._user_version(), self.schema_mod.SCHEMA_VERSION)
 
 
 class TestFreshInstallLayout(unittest.TestCase):
-    """Fresh installs are created directly in the constrained (v2) layout."""
+    """Fresh installs are created directly in the constrained (current) layout."""
 
     @classmethod
     def setUpClass(cls):
