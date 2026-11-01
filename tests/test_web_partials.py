@@ -126,6 +126,23 @@ class TestWebTableApi(unittest.TestCase):
         self.assertIn("vendor/alpine.min.js", body)
         self.assertIn('name="csrf_token"', body)
         self.assertNotIn("htmx", body)
+        # every page must be self-contained: no Google-Fonts (or any CDN)
+        # request — the school LAN runs with no internet
+        self.assertNotIn("fonts.googleapis", body)
+
+    def test_pages_and_fonts_fully_local(self):
+        # fonts come from web/static/fonts via @font-face in style.css —
+        # templates must not reference fonts.googleapis.com and the TTF
+        # files must actually be served (regression guard for offline use)
+        for path in ("/books", "/login"):
+            body = self.client.get(path).get_data(as_text=True)
+            self.assertNotIn("fonts.googleapis", body)
+        for name in ("Prompt-Medium.ttf", "Prompt-SemiBold.ttf",
+                     "Sarabun-Regular.ttf", "Sarabun-Bold.ttf"):
+            resp = self.client.get(f"/static/fonts/{name}")
+            self.assertEqual(resp.status_code, 200, name)
+            # TTF magic number: 0001 0000
+            self.assertEqual(resp.get_data()[:4], b"\x00\x01\x00\x00", name)
 
     def test_page_counts_render_in_header(self):
         self._add_book("PW-000", "หัวกระดาษหน้า")

@@ -33,11 +33,13 @@
   - สมาชิก: ลบกลุ่ม — สมาชิกที่มีประวัติการยืม/ประวัติเข้าออกถูกข้ามเพื่อคงความถูกต้องของข้อมูล
   - ทุกการกระทำผ่านกล่องยืนยัน + รายงาน "สำเร็จ X / ข้าม Y" และ log เฉพาะจำนวน (ไม่ลงข้อมูลส่วนบุคคล)
 - ตารางหนังสือ/สมาชิก/ประวัติ (เว็บ) เป็น **jQuery DataTables แบบ server-side** (ค้น/เรียง/แบ่งหน้าที่ฝั่งเซิร์ฟเวอร์, ~50 แถว/หน้า, อินเทอร์เฟซภาษาไทย) — แคตตาล็อก 1,000+ เล่มเปิดเร็วตลอด
-- SVG icons (Lucide), School logo, Search/filter ทุกหน้า
+- SVG icons (Lucide), School logo, ค้นหา/กรองที่ตารางหลัก — หนังสือ, สมาชิก และ ประวัติ (หน้าอื่นใช้ฟอร์ม/ตัวเลือกของงานตามบริบท)
+- บัตรสมาชิกและรายงาน PDF เป็นฟีเจอร์เดสก์ท็อป เท่านั้น (เว็บยังไม่เปิด route สร้าง PDF)
 - Responsive design, รองรับ Light/Dark mode
 - Frontend stack vendored ในเครื่อง (ทำงานได้แม้ไม่มีอินเทอร์เน็ต) — ดู `web/static/vendor/README.md`:
   - **SweetAlert2** — กล่องยืนยัน/แจ้งเตือนธีมเดียวกับระบบ, flash messages เป็น toast
   - **jQuery + DataTables** — ตารางหนังสือ/สมาชิก/ประวัติ ค้นหา/กรอง (รหัส/ชื่อ/สถานะ)/เรียง/แบ่งหน้า server-side ผ่าน `/api/{books,members,history}` พร้อมแถบจัดการกลุ่ม (bulk bar) ในหน้า books/members และไฟล์ i18n ภาษาไทยแฮนด์เมด
+  - ฟอนต์เว็บ **Sarabun + Prompt** (สัญญาอนุญาต OFL) ปักหมุดใน `web/static/fonts/` ผ่าน `@font-face` — ไม่มีการเรียก Google Fonts อีกต่อไป ทุกหน้ารวมถึงหน้า login ทำงานออฟไลน์สมบูรณ์
   - **Alpine.js** — ล็อกสถานะหน้ายืม (ค้างส่ง/ครบจำนวน) ประเมินทันทีในเบราว์เซอร์
   - **Chart.js** — แดชบอร์ด: การยืม 14 วันล่าสุด, เข้าออก 7 วันล่าสุด, สัดส่วนสถานะหนังสือ (`/api/analytics`)
   - **Flatpickr (th)** — ปฏิทินเลือกกำหนดคืน พร้อมปุ่มด่วน 7/14/21/30 วัน
@@ -171,6 +173,7 @@ THE-PY-LIB/
 │   │   │   ├── sweetalert2.min.js/.css  # SweetAlert2 11.26.25
 │   │   │   ├── chart.umd.min.js # Chart.js 4.6.1
 │   │   │   └── flatpickr.min.*
+│   │   ├── fonts/               # Sarabun + Prompt TTFs (OFL) — @font-face in style.css, offline
 │   │   ├── lang/
 │   │   │   └── datatables-th.json # hand-made Thai i18n for DataTables
 │   │   └── js/
@@ -215,7 +218,7 @@ THE-PY-LIB/
 │   ├── SECURITY.md              # Security runbook (key rotation, HTTPS/LAN)
 │   └── DESIGN.md                # Visual design system notes
 ├── assets/
-│   ├── fonts/                   # Sarabun-Regular.ttf, Sarabun-Bold.ttf
+│   ├── fonts/                   # Sarabun + Prompt TTFs (desktop PDFs + copied to web/static/fonts)
 │   ├── logos/                   # school_logo.png
 │   ├── qrcodes/                 # Generated QR images
 │   └── cards/                   # Generated member card PDFs
@@ -283,7 +286,7 @@ venv\Scripts\python -m unittest discover -s tests
 venv/bin/python -m unittest discover -s tests
 ```
 
-ปัจจุบันมี 129 test cases (16 test files) ครอบคลุม security, repositories, migrations, atomic borrow/return, backups, bulk imports, DataTables list APIs + bulk endpoints, desktop list-paging และ guards ของเว็บ
+ปัจจุบันมี 130 test cases (16 test files) ครอบคลุม security, repositories, migrations, atomic borrow/return, backups, bulk imports, DataTables list APIs + bulk endpoints, offline-safety (ไม่มี CDN/ฟอนต์ภายนอก), desktop list-paging และ guards ของเว็บ
 
 ---
 

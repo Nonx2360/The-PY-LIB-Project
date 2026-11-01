@@ -1,6 +1,33 @@
 /* THE PY-LIB Web UI — "ห้องอ่านหนังสือ" Reading Room design system
    Grounded in the school's own mark: petrol-navy logo, paper stationery,
    marigold ink. Status = rubber stamps on due-date cards. */
+
+/* Fonts copied from assets/fonts so the page needs zero CDN traffic.
+   Faces cover every weight the CSS requests: Prompt (display) 500–700,
+   Sarabun (body) 400 + 600–700 (Sarabun has no TrueType 600 on disk, so
+   the Bold file is registered with a weight range — same glyphs, no
+   synthetic bolding). See fonts/README.md for provenance + OFL license. */
+@font-face {
+    font-family: "Prompt";
+    src: url("fonts/Prompt-Medium.ttf") format("truetype");
+    font-weight: 500; font-style: normal; font-display: swap;
+}
+@font-face {
+    font-family: "Prompt";
+    src: url("fonts/Prompt-SemiBold.ttf") format("truetype");
+    font-weight: 600 700; font-style: normal; font-display: swap;
+}
+@font-face {
+    font-family: "Sarabun";
+    src: url("fonts/Sarabun-Regular.ttf") format("truetype");
+    font-weight: 400; font-style: normal; font-display: swap;
+}
+@font-face {
+    font-family: "Sarabun";
+    src: url("fonts/Sarabun-Bold.ttf") format("truetype");
+    font-weight: 600 700; font-style: normal; font-display: swap;
+}
+
 :root {
     --paper: #F6F5F1;          /* page background - warm near-white */
     --surface: #FFFFFF;        /* cards */

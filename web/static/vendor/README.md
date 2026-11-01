@@ -18,6 +18,11 @@ re-download, and note it here.
 
 Hand-made by this project (no official asset is vendored):
 
+- `../fonts/` — Sarabun + Prompt TTFs copied from `assets/fonts/` and
+  served by `@font-face` in `../style.css` (the Google-Fonts CDN link in
+  the templates was removed so every page — including login — renders
+  with zero external traffic); weights + license notes live in
+  `../fonts/README.md`;
 - `../lang/datatables-th.json` — our own Thai translation of the DataTables
   language keys (cdn.datatables.net refused to serve its i18n JSON at fetch
   time), loaded by `../js/tables.js` via `language: {url: ...}`;
