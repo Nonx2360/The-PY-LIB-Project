@@ -30,20 +30,35 @@
 <div class="card">
     <div class="card-header">
         <h3>รายชื่อสมาชิก ({{ total }} คน)</h3>
-        <form class="table-filter" action="{{ url_for('members') }}"
-              hx-get="{{ url_for('members') }}"
-              hx-target="#membersTableWrap" hx-swap="outerHTML"
-              hx-trigger="input changed delay:300ms from:input[name=q]"
-              hx-indicator="#membersTableWrap">
-            <div class="search-box">
-                <svg width="16" height="16" class="search-icon"><use href="#icon-search"/></svg>
-                <input type="text" name="q" value="{{ q }}" placeholder="ค้นหา ชื่อ/ชั้น/หมายเลข...">
-            </div>
-            <noscript><button type="submit" class="btn btn-ghost btn-sm">ค้นหา</button></noscript>
-        </form>
     </div>
     <div class="card-body">
-        {% include 'partials/_members_table.html' %}
+        <div class="bulk-bar" data-table="members" hidden>
+            <span class="bulk-count">เลือกไว้ <strong id="membersBulkCount">0</strong> คน</span>
+            <button type="button" class="btn btn-danger btn-sm" data-bulk="delete"
+                    title="ลบสมาชิกที่เลือก (สมาชิกที่มีประวัติจะถูกข้าม)">ลบที่เลือก</button>
+            <span class="bulk-hint">สมาชิกที่มีประวัติการยืมหรือการเข้า-ออกจะถูกข้ามโดยอัตโนมัติ</span>
+        </div>
+        <div class="table-wrap">
+            <table id="membersTable" class="data-table" style="width:100%">
+                <thead>
+                    <tr>
+                        <th class="dt-check"><input type="checkbox" id="membersCheckAll" title="เลือกทั้งหมดในหน้านี้"></th>
+                        <th>ชื่อ</th>
+                        <th>ชั้น</th>
+                        <th>หมายเลข</th>
+                        <th>วันที่ลงทะเบียน</th>
+                        <th>วันหมดอายุ</th>
+                        <th>จัดการ</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/datatables.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/tables.js') }}" data-table="members"></script>
 {% endblock %}

@@ -12,6 +12,7 @@
 - ยืม-คืนแบบ atomic transaction — ป้องกันการยืมซ้ำ/ข้อมูลค้างจากความผิดพลาด
 - แสดงสถานะคืนช้า พร้อมสีเตือน (เขียว / เหลือง / แดง)
 - หยุดให้บริการ (retire) / คืนสถานะหนังสือได้ โดยประวัติการยืมยังถูกเก็บไว้
+- จัดการกลุ่ม (bulk) ในหน้าหนังสือและสมาชิก: ติ๊กเลือกหลายรายการแล้ว หยุดให้บริการ / ให้บริการกลับมา / ลบพร้อมกัน (รายการที่มีประวัติหรือกำลังยืมถูกข้ามอัตโนมัติ พร้อมสรุป "สำเร็จ X / ข้าม Y")
 - ส่งออกบัตรสมาชิก PDF, ประวัติยืม-คืน, ประวัติเข้าออก พร้อมฟอนต์ไทย (Sarabun)
 - นำเข้า/ส่งออกหนังสือจากไฟล์ Excel (pandas + openpyxl) — นำเข้ารอบละพันเล่มขึ้นไปได้ (transaction เดียว ทำงานแบบเบื้องหลัง หน้าต่างไม่ค้าง)
 - ตารางรายการเปิดแบบแบ่งชุด (50 รายการแรก + ปุ่มแสดงเพิ่ม) — แคตตาล็อก 1,000+ เล่มเปิดได้ทันที ไม่ใช้ Windows resource เกิน (กัน crash ของ Tk)
@@ -27,16 +28,20 @@
 - สแกนบัตรสมาชิกจากกล้องเว็บเบราว์เซอร์ (jsQR vendored) — ถอดรหัสเฉพาะฝั่งเซิร์ฟเวอร์
 - หยุดให้บริการ/กลับมา และลบถาวรแบบ 2 ขั้นตอน (retire → purge) พร้อมเก็บอย่างปลอดภัย
 - นำเข้าหนังสือจากไฟล์ Excel ออนเว็บ (สูงสุด 5,000 แถว/ไฟล์) พร้อมดาวน์โหลดแม่แบบ — รหัสซ้ำ/แถวไม่สมบูรณ์ถูกข้ามและรายงานผล
-- ตารางหนังสือ/สมาชิก/ประวัติแบ่งหน้า server-side (50 แถว/หน้า) — แคตตาล็อก 1,000+ เล่มเปิดเร็วตลอด
+- จัดการกลุ่ม (bulk) ในเว็บ เทียบเท่าเดสก์ท็อป: ติ๊กเลือกหนังสือ/สมาชิกหลายรายการแล้วสั่งพร้อมกัน (สูงสุด 200 รายการ/ครั้ง)
+  - หนังสือ: หยุดให้บริการ / ให้บริการกลับมา / ลบ — เล่มที่กำลังยืมหรือมีประวัติและยังให้บริการอยู่ถูกข้ามโดยอัตโนมัติ (เล่มที่หยุดให้บริการจะถูกลบพร้อมประวัติการยืม)
+  - สมาชิก: ลบกลุ่ม — สมาชิกที่มีประวัติการยืม/ประวัติเข้าออกถูกข้ามเพื่อคงความถูกต้องของข้อมูล
+  - ทุกการกระทำผ่านกล่องยืนยัน + รายงาน "สำเร็จ X / ข้าม Y" และ log เฉพาะจำนวน (ไม่ลงข้อมูลส่วนบุคคล)
+- ตารางหนังสือ/สมาชิก/ประวัติ (เว็บ) เป็น **jQuery DataTables แบบ server-side** (ค้น/เรียง/แบ่งหน้าที่ฝั่งเซิร์ฟเวอร์, ~50 แถว/หน้า, อินเทอร์เฟซภาษาไทย) — แคตตาล็อก 1,000+ เล่มเปิดเร็วตลอด
 - SVG icons (Lucide), School logo, Search/filter ทุกหน้า
 - Responsive design, รองรับ Light/Dark mode
 - Frontend stack vendored ในเครื่อง (ทำงานได้แม้ไม่มีอินเทอร์เน็ต) — ดู `web/static/vendor/README.md`:
   - **SweetAlert2** — กล่องยืนยัน/แจ้งเตือนธีมเดียวกับระบบ, flash messages เป็น toast
-  - **HTMX** — ค้นหา/กรองหนังสือ (รหัส/ชื่อ/สถานะ), สมาชิก, ประวัติ แบบ server-side โดยไม่โหลดหน้าใหม่
+  - **jQuery + DataTables** — ตารางหนังสือ/สมาชิก/ประวัติ ค้นหา/กรอง (รหัส/ชื่อ/สถานะ)/เรียง/แบ่งหน้า server-side ผ่าน `/api/{books,members,history}` พร้อมแถบจัดการกลุ่ม (bulk bar) ในหน้า books/members และไฟล์ i18n ภาษาไทยแฮนด์เมด
   - **Alpine.js** — ล็อกสถานะหน้ายืม (ค้างส่ง/ครบจำนวน) ประเมินทันทีในเบราว์เซอร์
   - **Chart.js** — แดชบอร์ด: การยืม 14 วันล่าสุด, เข้าออก 7 วันล่าสุด, สัดส่วนสถานะหนังสือ (`/api/analytics`)
   - **Flatpickr (th)** — ปฏิทินเลือกกำหนดคืน พร้อมปุ่มด่วน 7/14/21/30 วัน
-  - ลำดับโหลด: sweetalert2 → htmx → ui.js → alpine (สำคัญ อย่าสลับ)
+  - ลำดับโหลด: sweetalert2 → ui.js → [jquery + datatables + tables.js] → alpine (สำคัญ อย่าสลับ)
 
 ### ความปลอดภัย
 - ข้อมูล QR เข้ารหัสแบบ AEAD **AES-256-GCM (`v2:`)** และยังถอดรหัสการ์ดเก่าแบบ AES-256-CBC อย่างเข้มงวด (strict legacy fallback)
@@ -155,19 +160,23 @@ THE-PY-LIB/
 │       ├── scan_window.py       # Shared camera QR scan window
 │       └── pdf_viewer.py        # Built-in PDF viewer (PyMuPDF)
 ├── web/
-│   ├── app.py                   # Flask web application (routes, guards, pagination, /api/analytics, Excel import)
+│   ├── app.py                   # Flask web application (routes, guards, DataTables /api feeds, bulk endpoints, /api/analytics, Excel import)
 │   ├── csrf.py                  # Per-session CSRF tokens (form field หรือ X-CSRF-Token header)
 │   ├── static/
 │   │   ├── style.css            # Web UI design system
 │   │   ├── vendor/              # Vendored JS libs, pinned versions (see README.md inside)
 │   │   │   ├── alpine.min.js    # Alpine.js 3.17.5
-│   │   │   ├── htmx.min.js      # HTMX 2.0.11
+│   │   │   ├── jquery.min.js    # jQuery 3.7.1
+│   │   │   ├── datatables.min.js# DataTables 1.13.8 (server-side tables)
 │   │   │   ├── sweetalert2.min.js/.css  # SweetAlert2 11.26.25
 │   │   │   ├── chart.umd.min.js # Chart.js 4.6.1
 │   │   │   └── flatpickr.min.*
+│   │   ├── lang/
+│   │   │   └── datatables-th.json # hand-made Thai i18n for DataTables
 │   │   └── js/
 │   │       ├── jsQR.js          # Vendored jsQR (in-browser QR decode)
 │   │       ├── scan.js          # Camera capture + /scan/resolve calls
+│   │       ├── tables.js        # DataTables configs (books/members/history) + bulk bar
 │   │       └── ui.js            # PyLib helpers: dialogs, toasts, data-confirm, flatpickr init
 │   └── templates/
 │       ├── icons.svg            # Lucide SVG icon sprite
@@ -180,8 +189,7 @@ THE-PY-LIB/
 │       ├── return_book.html     # Return with overdue badges
 │       ├── history.html         # Borrow history
 │       ├── access.html          # Access recording + history
-│       ├── settings.html        # Settings + about
-│       └── partials/            # HTMX table partials (_books/_members/_history)
+│       └── settings.html        # Settings + about
 ├── tools/
 │   ├── rotate_qr_key.py         # Key rotation: backup → decrypt → re-encrypt
 │   └── regenerate_member_cards.py
@@ -200,8 +208,8 @@ THE-PY-LIB/
 │   ├── test_web_scan.py         # Badge scanner endpoint
 │   ├── test_web_delete_guards.py# History-bearing delete refusals
 │   ├── test_web_book_retire.py  # Retire/restore/purge flow
-│   ├── test_web_bulk.py         # 1000-row Excel import + list pagination
-│   ├── test_web_partials.py     # HTMX partials + header CSRF + analytics
+│   ├── test_web_bulk.py         # 1000-row Excel import + DataTables APIs + bulk endpoints (cap/CSRF/skip counts)
+│   ├── test_web_partials.py     # List-table skeleton/page APIs + header CSRF + analytics
 │   └── test_web_pages_smoke.py  # Every authenticated page renders 200
 ├── docs/
 │   ├── SECURITY.md              # Security runbook (key rotation, HTTPS/LAN)
@@ -275,7 +283,7 @@ venv\Scripts\python -m unittest discover -s tests
 venv/bin/python -m unittest discover -s tests
 ```
 
-ปัจจุบันมี 117 test cases (16 test files) ครอบคลุม security, repositories, migrations, atomic borrow/return, backups, bulk imports, HTMX partials/analytics, desktop list-paging และ guards ของเว็บ
+ปัจจุบันมี 129 test cases (16 test files) ครอบคลุม security, repositories, migrations, atomic borrow/return, backups, bulk imports, DataTables list APIs + bulk endpoints, desktop list-paging และ guards ของเว็บ
 
 ---
 

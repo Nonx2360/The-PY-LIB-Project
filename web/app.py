@@ -43,11 +43,6 @@ LIMITS = {
     "book_code": 40, "book_title": 200, "school_name": 80, "logo_path": 260,
 }
 
-# List pagination: every list page shows PAGE_SIZE rows and gets a server-
-# computed pager (lazy-per-page loading keeps 1000+ catalogs responsive).
-PAGE_SIZE = 50
-
-
 def _clean(value, limit):
     text = "".join(c for c in (value or "") if ord(c) >= 32)
     text = text.strip()
@@ -127,12 +122,14 @@ def create_app():
             return None
         if not session.get("logged_in"):
             return redirect(url_for("login"))
-        # form field first (regular pages); X-CSRF-Token header for HTMX requests
+        # form field first (regular pages); X-CSRF-Token header for AJAX
+        # requests (the list-table engine and its bulk endpoints)
         token = (request.form.get("csrf_token")
                  or request.headers.get("X-CSRF-Token", ""))
         if not csrf_mod.validate(session, token):
             logger.warning("csrf: rejected POST (missing/invalid token) %s", request.path)
             flash("เซสชันหมดอายุหรือโทเคนไม่ถูกต้อง กรุณาลองอีกครั้ง", "error")
+            # AJAX callers (fetch) get a clean status instead of a redirect
             if request.headers.get("HX-Request") == "true":
                 return "", 403
             return redirect(request.referrer or url_for("dashboard"))
@@ -144,38 +141,80 @@ def create_app():
         flash("ไฟล์ใหญ่เกิน 8 MB — กรุณาแบ่งการนำเข้าเป็นหลายไฟล์", "error")
         return redirect(url_for("books"))
 
-    def _pager(endpoint, page, pages, target, total, noun, **fixed):
-        """Build the pagination model the list partials render.
+    # ── DataTables server-side helpers ────────────────────
+    # List pages are driven by jQuery DataTables (vendored) in server-side
+    # mode: the browser sends draw/start/length/search/order, the API
+    # answers {draw, recordsTotal, recordsFiltered, data}. Everything is
+    # bounded so a 10,000-row catalog costs the same as a 10-row one.
 
-        Keeps first/last pages always visible, two neighbours around the
-        current one, and '…' gaps in between. `fixed` carries the query
-        context (q, status) that every page link must preserve — empty
-        values are dropped so the URL stays clean.
+    _DT_LENGTHS = (10, 25, 50, 100)
+
+    def _dt_args():
+        """Parse + bound the DataTables server-side protocol parameters."""
+        draw = _int_in(request.args.get("draw"), 1, 10**7, 1)
+        start = _int_in(request.args.get("start"), 0, 10**7, 0)
+        length = _int_in(request.args.get("length"), 1, 10**4, 50)
+        if length not in _DT_LENGTHS:          # only values our UI offers
+            length = 50
+        if start > 10**7 - length:
+            start = 0
+        order_col = _int_in(request.args.get("order[0][column]"), 0, 20, 0)
+        order_dir = (request.args.get("order[0][dir]") or "desc").lower()
+        if order_dir not in ("asc", "desc"):
+            order_dir = "asc"
+        q = _clean(request.args.get("search[value]"), 80)
+        return {"draw": draw, "start": start, "length": length,
+                "order_col": order_col, "order_dir": order_dir, "q": q}
+
+    def _dt_response(dt, repo, base, where, params, select_sql, columns):
+        """Assemble the JSON payload + run the bounded page query.
+
+        `columns` is a list of (SQL identifier, dict key) pairs — the key at
+        dt['order_col'] must be orderable, anything else falls back to the
+        first column (id, newest first). When `start` overshoots the
+        filtered row count (e.g. a bulk delete emptied the current page) the
+        page is clamped back to the last one instead of showing nothing.
         """
-        items = []
-        wanted = sorted({1, pages}
-                        | set(range(max(1, page - 2), min(pages, page + 2) + 1)))
-        last = 0
-        for p in wanted:
-            if last and p - last > 1:
-                items.append({"gap": True})
-            args = {k: v for k, v in fixed.items() if v not in ("", None)}
-            args["page"] = p
-            items.append({"page": p, "active": p == page,
-                          "url": url_for(endpoint, **args)})
-            last = p
+        total = repo.fetchone(f"SELECT COUNT(*) FROM {base}")[0]
+        where_sql = f" WHERE {where}" if where else ""
+        filtered = repo.fetchone(
+            f"SELECT COUNT(*) FROM {base}{where_sql}", tuple(params))[0]
+        order_col = min(dt["order_col"], len(columns) - 1)
+        order_sql = columns[order_col][0]
+        start = dt["start"]
+        length = dt["length"]
+        # page clamp: a bulk action can leave the current page number past
+        # the end — jump back to the last full page instead of a blank one
+        if filtered > 0 and start >= filtered:
+            start = max(0, ((filtered - 1) // length) * length)
+        rows = repo.fetchall(
+            select_sql + where_sql +
+            f" ORDER BY {order_sql} {dt['order_dir'].upper()} "
+            f"LIMIT {length} OFFSET {start}",
+            tuple(params))
+        return jsonify({
+            "draw": dt["draw"],
+            "recordsTotal": total,
+            "recordsFiltered": filtered,
+            "data": _rows_to_dicts(rows, [key for _, key in columns]),
+        })
 
-        def _link(p):
-            args = {k: v for k, v in fixed.items() if v not in ("", None)}
-            args["page"] = p
-            return url_for(endpoint, **args)
-
-        return {
-            "items": items, "page": page, "pages": pages,
-            "target": target, "total": total, "noun": noun,
-            "prev": _link(page - 1) if page > 1 else None,
-            "next": _link(page + 1) if page < pages else None,
-        }
+    def _bulk_ids(payload):
+        """Validate a bulk-action id list; returns (ids, error_message)."""
+        raw = payload.get("ids") if isinstance(payload, dict) else None
+        ids, invalid = [], 0
+        if isinstance(raw, list):
+            for v in raw:
+                try:
+                    i = int(v)
+                except (TypeError, ValueError):
+                    invalid += 1
+                    continue
+                if 1 <= i <= 10**9:
+                    ids.append(i)
+        if len(ids) > 200:                       # keep one batch lightweight
+            return [], "เลือกได้ครั้งละสูงสุด 200 รายการ"
+        return sorted(set(ids)), None
 
     # ── Auth ──────────────────────────────────────────────
     @app.route("/login", methods=["GET", "POST"])
@@ -231,28 +270,49 @@ def create_app():
     @app.route("/members")
     @login_required
     def members():
-        q = _clean(request.args.get("q"), 80)
-        page = _int_in(request.args.get("page"), 1, 10**6, 1)
-        cond_sql, cond_params = "", ()
-        if q:
-            like = f"%{q}%"
-            cond_sql = " WHERE name LIKE ? OR grade LIKE ? OR number LIKE ?"
-            cond_params = (like, like, like)
-        total = member_repo.fetchone(
-            "SELECT COUNT(*) FROM members" + cond_sql, cond_params)[0]
-        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-        page = min(max(1, page), pages)
-        rows = member_repo.fetchall(
-            "SELECT id, name, grade, number, register_date, expire_date, qrcode_path "
-            "FROM members" + cond_sql + " ORDER BY id DESC LIMIT ? OFFSET ?",
-            (*cond_params, PAGE_SIZE, (page - 1) * PAGE_SIZE))
-        members_ = _rows_to_dicts(rows, ["id", "name", "grade", "number",
-                                         "register_date", "expire_date", "qrcode_path"])
-        pager = _pager("members", page, pages, "membersTableWrap", total, "คน", q=q)
-        ctx = dict(members=members_, q=q, total=total, pages=pages, p=pager)
-        if request.headers.get("HX-Request") == "true":
-            return render_template("partials/_members_table.html", **ctx)
-        return render_template("members.html", **ctx)
+        total = member_repo.fetchone("SELECT COUNT(*) FROM members")[0]
+        return render_template("members.html", total=total)
+
+    @app.route("/api/members")
+    @login_required
+    def api_members():
+        """DataTables server-side feed for the members table."""
+        dt = _dt_args()
+        base = "members"
+        where, params = "", ()
+        if dt["q"]:
+            like = f"%{dt['q']}%"
+            where = "name LIKE ? OR grade LIKE ? OR number LIKE ?"
+            params = (like, like, like)
+        return _dt_response(
+            dt, member_repo, base, where, params,
+            "SELECT id, name, grade, number, register_date, expire_date, "
+            "qrcode_path FROM members",
+            [("id", "id"), ("name", "name"), ("grade", "grade"),
+             ("number", "number"), ("register_date", "register_date"),
+             ("expire_date", "expire_date"), ("qrcode_path", "qrcode_path")],
+        )
+
+    @app.route("/members/bulk", methods=["POST"])
+    @login_required
+    def members_bulk():
+        """Bulk member management: only 'delete' for now.
+
+        Referenced members (borrow/access history) are skipped by
+        delete_many, never erroring the batch.
+        """
+        payload = request.get_json(silent=True) or {}
+        action = payload.get("action")
+        ids, err = _bulk_ids(payload)
+        if err:
+            return jsonify({"status": "error", "message": err}), 400
+        if action != "delete":
+            return jsonify({"status": "error",
+                            "message": "รู้จักเฉพาะคำสั่ง 'delete' เท่านั้น"}), 400
+        deleted, skipped = member_repo.delete_many(ids)
+        logger.info("Web: bulk member delete: requested=%d deleted=%d skipped=%d",
+                    len(ids), deleted, skipped)
+        return jsonify({"status": "ok", "deleted": deleted, "skipped": skipped})
 
     @app.route("/members/add", methods=["POST"])
     @login_required
@@ -322,36 +382,68 @@ def create_app():
     @app.route("/books")
     @login_required
     def books():
-        q = _clean(request.args.get("q"), 80)
+        total = book_repo.fetchone("SELECT COUNT(*) FROM books")[0]
+        return render_template("books.html", total=total)
+
+    @app.route("/api/books")
+    @login_required
+    def api_books():
+        """DataTables server-side feed for the books table.
+
+        `status` (optional) is an exact-match server-side filter wired to
+        the page's status <select>; the free-text search goes through the
+        standard search[value] parameter from DataTables.
+        """
+        dt = _dt_args()
         status = (request.args.get("status") or "").strip()
-        page = _int_in(request.args.get("page"), 1, 10**6, 1)
+        base = "books bo"
         where, params = [], []
-        if q:
-            like = f"%{q}%"
+        if dt["q"]:
+            like = f"%{dt['q']}%"
             where.append("(bo.code LIKE ? OR bo.title LIKE ?)")
             params += [like, like]
         if status:
             where.append("bo.status = ?")
             params.append(status)
-        cond_sql = (" WHERE " + " AND ".join(where)) if where else ""
-        total = book_repo.fetchone(
-            "SELECT COUNT(*) FROM books bo" + cond_sql, tuple(params))[0]
-        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-        page = min(max(1, page), pages)
-        rows = book_repo.fetchall(
-            """SELECT bo.id, bo.code, bo.title, bo.status,
-                      (SELECT COUNT(*) FROM borrow_log bl WHERE bl.book_id=bo.id) AS history
-               FROM books bo""" + cond_sql +
-            " ORDER BY bo.id DESC LIMIT ? OFFSET ?",
-            (*params, PAGE_SIZE, (page - 1) * PAGE_SIZE))
-        books_ = _rows_to_dicts(rows, ["id", "code", "title", "status", "history"])
-        pager = _pager("books", page, pages, "booksTableWrap", total, "เล่ม",
-                       q=q, status=status)
-        ctx = dict(books=books_, q=q, status=status,
-                   total=total, pages=pages, p=pager)
-        if request.headers.get("HX-Request") == "true":
-            return render_template("partials/_books_table.html", **ctx)
-        return render_template("books.html", **ctx)
+        cond = " AND ".join(where)
+        select = ("SELECT bo.id, bo.code, bo.title, bo.status, "
+                  "(SELECT COUNT(*) FROM borrow_log bl WHERE bl.book_id=bo.id) "
+                  "AS history FROM books bo")
+        return _dt_response(
+            dt, book_repo, base, cond, params, select,
+            [("bo.id", "id"), ("bo.code", "code"), ("bo.title", "title"),
+             ("bo.status", "status"), ("history", "history")],
+        )
+
+    @app.route("/books/bulk", methods=["POST"])
+    @login_required
+    def books_bulk():
+        """Bulk book management: retire / restore / delete-many in JSON.
+
+        delete is the collective version of the per-row flow: retired
+        copies purge together with their borrow_log rows, plain copies
+        delete only when they have no borrow history, everything else is
+        skipped and reported.
+        """
+        payload = request.get_json(silent=True) or {}
+        action = payload.get("action")
+        ids, err = _bulk_ids(payload)
+        if err:
+            return jsonify({"status": "error", "message": err}), 400
+        if action == "retire":
+            changed = book_repo.bulk_retire(ids)
+            out = {"status": "ok", "changed": changed, "skipped": len(ids) - changed}
+        elif action == "restore":
+            changed = book_repo.bulk_restore(ids)
+            out = {"status": "ok", "changed": changed, "skipped": len(ids) - changed}
+        elif action == "delete":
+            deleted, skipped = book_repo.delete_many(ids)
+            out = {"status": "ok", "deleted": deleted, "skipped": skipped}
+        else:
+            return jsonify({"status": "error",
+                            "message": "รู้จักคำสั่ง retire/restore/delete เท่านั้น"}), 400
+        logger.info("Web: bulk books: action=%s requested=%d", action, len(ids))
+        return jsonify(out)
 
     @app.route("/books/add", methods=["POST"])
     @login_required
@@ -632,35 +724,34 @@ def create_app():
     @app.route("/history")
     @login_required
     def history():
-        q = _clean(request.args.get("q"), 80)
-        page = _int_in(request.args.get("page"), 1, 10**6, 1)
-        joins = """FROM borrow_log bl
-                 JOIN members m ON bl.member_id=m.id
-                 JOIN books b ON bl.book_id=b.id"""
-        cond_sql, cond_params = "", ()
-        if q:
-            like = f"%{q}%"
-            cond_sql = (" WHERE m.name LIKE ? OR m.grade LIKE ? "
-                        "OR b.code LIKE ? OR b.title LIKE ?")
-            cond_params = (like, like, like, like)
-        total = borrow_repo.fetchone(
-            "SELECT COUNT(*) " + joins + cond_sql, cond_params)[0]
-        pages = max(1, (total + PAGE_SIZE - 1) // PAGE_SIZE)
-        page = min(max(1, page), pages)
-        rows = borrow_repo.fetchall(
-            """SELECT m.name, m.grade, b.code, b.title,
-                      bl.borrow_date, bl.return_due, bl.returned
-               """ + joins + cond_sql +
-            " ORDER BY bl.id DESC LIMIT ? OFFSET ?",
-            (*cond_params, PAGE_SIZE, (page - 1) * PAGE_SIZE))
-        records = _rows_to_dicts(rows, ["name", "grade", "code", "title",
-                                        "borrow_date", "return_due", "returned"])
-        pager = _pager("history", page, pages, "historyTableWrap", total,
-                       "รายการ", q=q)
-        ctx = dict(records=records, q=q, total=total, pages=pages, p=pager)
-        if request.headers.get("HX-Request") == "true":
-            return render_template("partials/_history_table.html", **ctx)
-        return render_template("history.html", **ctx)
+        total = borrow_repo.fetchone("SELECT COUNT(*) FROM borrow_log")[0]
+        return render_template("history.html", total=total)
+
+    @app.route("/api/history")
+    @login_required
+    def api_history():
+        """DataTables server-side feed for the borrow-history table."""
+        dt = _dt_args()
+        base = ("borrow_log bl JOIN members m ON bl.member_id=m.id "
+                "JOIN books b ON bl.book_id=b.id")
+        where, params = "", ()
+        if dt["q"]:
+            like = f"%{dt['q']}%"
+            where = ("m.name LIKE ? OR m.grade LIKE ? "
+                     "OR b.code LIKE ? OR b.title LIKE ?")
+            params = (like, like, like, like)
+        return _dt_response(
+            dt, borrow_repo, base, where, params,
+            "SELECT bl.id, m.name, m.grade, b.code, b.title, "
+            "bl.borrow_date, bl.return_due, bl.returned "
+            "FROM borrow_log bl "
+            "JOIN members m ON bl.member_id=m.id "
+            "JOIN books b ON bl.book_id=b.id",
+            [("bl.id", "id"), ("m.name", "name"), ("m.grade", "grade"),
+             ("b.code", "code"), ("b.title", "title"),
+             ("bl.borrow_date", "borrow_date"), ("bl.return_due", "return_due"),
+             ("bl.returned", "returned")],
+        )
 
     # ── Access History + Recording ──────────────────────────
     @app.route("/access")

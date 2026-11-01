@@ -6,9 +6,10 @@
     <title>{% block title %}THE PY-LIB{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='vendor/sweetalert2.min.css') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% block head %}{% endblock %}
     <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@500;600&family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
 </head>
-<body hx-headers='{"X-CSRF-Token": "{{ csrf_token }}"}'>
+<body>
     {% include 'icons.svg' %}
     <div class="layout">
         <nav class="sidebar">
@@ -74,11 +75,12 @@
         </main>
     </div>
     <!-- vendored stack (offline-safe, pinned versions): dialogs (SweetAlert2),
-         partial updates (HTMX), helpers (ui.js), reactive bits (Alpine) -->
+         helpers (ui.js). Table pages add jQuery + DataTables in their scripts
+         block; Alpine loads last (it bootstraps itself) and powers the
+         borrow-page component registered by ui.js. -->
     <script src="{{ url_for('static', filename='vendor/sweetalert2.min.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/htmx.min.js') }}"></script>
     <script src="{{ url_for('static', filename='js/ui.js') }}"></script>
-    <script src="{{ url_for('static', filename='vendor/alpine.min.js') }}"></script>
     {% block scripts %}{% endblock %}
+    <script src="{{ url_for('static', filename='vendor/alpine.min.js') }}"></script>
 </body>
 </html>

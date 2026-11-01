@@ -37,3 +37,37 @@ class MemberRepository(BaseRepository):
 
     def delete(self, member_id):
         self.execute("DELETE FROM members WHERE id = ?", (member_id,))
+
+    def delete_many(self, ids):
+        """Delete several members in ONE transaction, skipping the unsafe.
+
+        A member referenced by borrow_log or access_log (foreign keys) is
+        skipped instead of crashing the batch; missing ids count as skips
+        too. Returns (deleted, skipped).
+        """
+        ids = [i for i in ids if i]
+        if not ids:
+            return 0, 0
+
+        def _del(conn):
+            deleted = skipped = 0
+            for mid in ids:
+                if not conn.execute(
+                        "SELECT 1 FROM members WHERE id=?", (mid,)).fetchone():
+                    skipped += 1
+                    continue
+                if conn.execute(
+                        "SELECT 1 FROM borrow_log WHERE member_id=? LIMIT 1",
+                        (mid,)).fetchone():
+                    skipped += 1
+                    continue
+                if conn.execute(
+                        "SELECT 1 FROM access_log WHERE member_id=? LIMIT 1",
+                        (mid,)).fetchone():
+                    skipped += 1
+                    continue
+                conn.execute("DELETE FROM members WHERE id=?", (mid,))
+                deleted += 1
+            return deleted, skipped
+
+        return self.transact(_del)

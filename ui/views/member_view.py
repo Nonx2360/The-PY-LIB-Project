@@ -24,6 +24,9 @@ class MemberView(ctk.CTkFrame):
         super().__init__(parent, fg_color="transparent")
         self.nav = nav
         self.repo = MemberRepository()
+        self._selected = set()          # bulk-management selection (ids)
+        self._bulk_count_label = None
+        self._bulk_built = False
         self._build()
 
     def _build(self):
@@ -82,6 +85,11 @@ class MemberView(ctk.CTkFrame):
         self.search_entry.pack(side="right")
         self.search_entry.bind("<KeyRelease>", self._on_search_key)
 
+        # bulk action bar — delete is the only safe member operation (rows
+        # with borrow/access history must be kept); hidden until rows are ticked
+        self.bulk_bar = ctk.CTkFrame(list_card, fg_color=theme.PRIMARY,
+                                     corner_radius=10)
+
         # bounded list window (see ui/widgets/row_window.py)
         self.list_frame = RowWindow(list_card, empty_note="ไม่พบสมาชิก")
         self.list_frame.on_status = self._update_count
@@ -94,6 +102,13 @@ class MemberView(ctk.CTkFrame):
         if not self.winfo_exists():
             return
         self.count_label.configure(text=f"รายชื่อสมาชิก ({total})")
+
+    def _alive(self):
+        """False once the view has been destroyed (user navigated away)."""
+        try:
+            return bool(self.winfo_exists())
+        except Exception:
+            return False
 
     def _on_search_key(self, _e=None):
         if getattr(self, "_search_job", None) is not None:
@@ -119,30 +134,104 @@ class MemberView(ctk.CTkFrame):
         mid, name, grade, number, reg, exp, qr_data, qr_path = m
         row = theme.card(self.list_frame, corner_radius=10)
         row.pack(fill="x", padx=4, pady=4)
-        row.grid_columnconfigure(1, weight=1)
+        row.grid_columnconfigure(2, weight=1)
+
+        check = ctk.CTkCheckBox(row, text="", width=24,
+                                checkbox_width=18, checkbox_height=18)
+        check.grid(row=0, column=0, rowspan=2, padx=(10, 4), pady=8)
+        if mid in self._selected:
+            check.select()
+        # command is wired after assignment so the lambda can close over the
+        # very checkbox it belongs to (no forward-reference at creation)
+        check.configure(command=lambda mid=mid, c=check: self._toggle_select(mid, c))
 
         ctk.CTkFrame(row, width=4, height=40, fg_color=theme.PRIMARY,
-                     corner_radius=2).grid(row=0, column=0, rowspan=2, padx=(10, 12), pady=8)
+                     corner_radius=2).grid(row=0, column=1, rowspan=2, padx=(4, 10), pady=8)
         ctk.CTkLabel(row, text=name, font=theme.font(15, bold=True),
                      text_color=theme.text_color(), anchor="w").grid(
-            row=0, column=1, sticky="w", pady=(8, 0))
+            row=0, column=2, sticky="w", pady=(8, 0))
         info = f"ชั้น {grade}  •  เลขที่ {number}"
         ctk.CTkLabel(row, text=info, font=theme.font(12),
                      text_color=theme.muted_color(), anchor="w").grid(
-            row=1, column=1, sticky="w", pady=(0, 8))
+            row=1, column=2, sticky="w", pady=(0, 8))
 
         expire_lbl = theme.badge_amber(row, f"หมดอายุ {exp}") if exp >= datetime.now().strftime("%Y-%m-%d") \
             else theme.badge_red(row, f"หมดอายุ {exp}")
-        expire_lbl.grid(row=0, column=2, rowspan=2, padx=6)
+        expire_lbl.grid(row=0, column=3, rowspan=2, padx=6)
 
         btn_row = ctk.CTkFrame(row, fg_color="transparent")
-        btn_row.grid(row=0, column=3, rowspan=2, padx=(6, 10))
+        btn_row.grid(row=0, column=4, rowspan=2, padx=(6, 10))
         theme.secondary_button(btn_row, "ดู QR", lambda mm=m: self._view_qr(mm),
                                width=72, height=30).pack(side="left", padx=2)
         theme.secondary_button(btn_row, "บัตร PDF", lambda mm=m: self._view_card(mm),
                                width=80, height=30).pack(side="left", padx=2)
         theme.ghost_button(btn_row, "ลบ", lambda mm=m: self._delete_member(mm),
                            width=56, height=30, text_color=theme.DANGER).pack(side="left", padx=2)
+
+    # ================= bulk management =================
+    def _toggle_select(self, member_id, box):
+        if box.get():
+            self._selected.add(member_id)
+        else:
+            self._selected.discard(member_id)
+        self._sync_bulk_bar()
+
+    def _sync_bulk_bar(self):
+        """Show the bar when rows are ticked, hide it when none remain."""
+        n = len(self._selected)
+        if n == 0:
+            self._bulk_count_label = None
+            if self.bulk_bar.winfo_manager():
+                self.bulk_bar.pack_forget()
+            return
+        if not self.bulk_bar.winfo_manager():
+            if not self._bulk_built:
+                self._build_bulk_bar()
+                self._bulk_built = True
+            # keep the bar visually above the list even though it was
+            # created before the list frame got packed
+            self.bulk_bar.pack(fill="x", padx=10, pady=(0, 6),
+                               before=self.list_frame)
+        if self._bulk_count_label is not None:
+            self._bulk_count_label.configure(text=f"เลือกไว้ {n} รายการ")
+
+    def _build_bulk_bar(self):
+        label = ctk.CTkLabel(self.bulk_bar, text="",
+                             font=theme.font(13, bold=True),
+                             text_color="#FFFFFF")
+        label.pack(side="left", padx=(12, 6), pady=8)
+        self._bulk_count_label = label
+        theme.secondary_button(self.bulk_bar, "ลบที่เลือก",
+                               self._bulk_delete, height=30,
+                               text_color=theme.DANGER).pack(side="left", padx=3)
+        theme.secondary_button(self.bulk_bar, "เคลียร์การเลือก",
+                               self._clear_selection, height=30).pack(side="left", padx=(3, 10))
+
+    def _clear_selection(self):
+        self._selected.clear()
+        self._sync_bulk_bar()
+        if self._alive():
+            self._display_members()  # rebuild rows so no checkbox stays ticked
+
+    def _bulk_delete(self):
+        ids = sorted(self._selected)
+        if not ids or not show_confirm_dialog(
+                self, "ยืนยันการลบ",
+                f"ลบสมาชิกที่เลือก {len(ids)} คน?\n"
+                "สมาชิกที่มีประวัติการยืมหรือประวัติเข้าออกจะถูกข้าม "
+                "ระบบเก็บประวัติไว้เพื่อความถูกต้องของข้อมูล"):
+            return
+        deleted, skipped = self.repo.delete_many(ids)
+        show_toast(self, f"ลบสำเร็จ {deleted} / ข้าม {skipped} รายการ",
+                   "green" if deleted and not skipped else "amber")
+        logger.info("desktop members bulk: delete requested=%d deleted=%d "
+                    "skipped=%d", len(ids), deleted, skipped)
+        # QR PNG files of deleted members are left in assets/qrcodes on
+        # purpose: delete_many runs one shared transaction and only reports
+        # counts, so mapping deleted ids back to paths would need extra
+        # queries — orphan files are harmless (and match bulk behaviour of
+        # keeping data consistent first).
+        self._clear_selection()
 
     # ================= actions =================
     def _add_member(self):

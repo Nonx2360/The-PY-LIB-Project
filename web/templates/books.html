@@ -42,27 +42,47 @@
 </div>
 <div class="card">
     <div class="card-header">
-        <h3>หนังสือทั้งหมด ({{ total }} เล่ม)</h3>
-        <form class="table-filter" action="{{ url_for('books') }}"
-              hx-get="{{ url_for('books') }}"
-              hx-target="#booksTableWrap" hx-swap="outerHTML"
-              hx-trigger="input changed delay:300ms from:input[name=q], change from:select[name=status]"
-              hx-indicator="#booksTableWrap">
-            <div class="search-box">
-                <svg width="16" height="16" class="search-icon"><use href="#icon-search"/></svg>
-                <input type="text" name="q" value="{{ q }}" placeholder="ค้นหา รหัส/ชื่อ...">
-            </div>
-            <select name="status" class="status-filter" aria-label="กรองตามสถานะ">
+        <h3>หนังสือทั้งหมด (<span id="booksTotal">{{ total }}</span> เล่ม)</h3>
+        <div class="table-filter">
+            <select name="status" id="booksStatus" class="status-filter" aria-label="กรองตามสถานะ">
                 <option value="">ทุกสถานะ</option>
-                <option value="ว่าง" {% if status == 'ว่าง' %}selected{% endif %}>ว่าง</option>
-                <option value="ยืมแล้ว" {% if status == 'ยืมแล้ว' %}selected{% endif %}>ยืมแล้ว</option>
-                <option value="หยุดให้บริการ" {% if status == 'หยุดให้บริการ' %}selected{% endif %}>หยุดให้บริการ</option>
+                <option value="ว่าง">ว่าง</option>
+                <option value="ยืมแล้ว">ยืมแล้ว</option>
+                <option value="หยุดให้บริการ">หยุดให้บริการ</option>
             </select>
-            <noscript><button type="submit" class="btn btn-ghost btn-sm">ค้นหา</button></noscript>
-        </form>
+        </div>
     </div>
     <div class="card-body">
-        {% include 'partials/_books_table.html' %}
+        <div class="bulk-bar" data-table="books" hidden>
+            <span class="bulk-count">เลือกไว้ <strong id="booksBulkCount">0</strong> รายการ</span>
+            <button type="button" class="btn btn-secondary btn-sm" data-bulk="retire"
+                    title="ว่าง → หยุดให้บริการ (เล่มที่ถูกยืมอยู่จะถูกข้าม)">หยุดให้บริการ</button>
+            <button type="button" class="btn btn-success btn-sm" data-bulk="restore"
+                    title="หยุดให้บริการ → ว่าง">ให้บริการกลับมา</button>
+            <button type="button" class="btn btn-danger btn-sm" data-bulk="delete"
+                    title="ลบเล่มที่เลือก (เล่มที่มีข้อจำกัดจะถูกข้าม)">ลบที่เลือก</button>
+            <span class="bulk-hint">ลบ: เล่มที่หยุดให้บริการจะถูกลบถาวรพร้อมประวัติการยืม</span>
+        </div>
+        <div class="table-wrap">
+            <table id="booksTable" class="data-table" style="width:100%">
+                <thead>
+                    <tr>
+                        <th class="dt-check"><input type="checkbox" id="booksCheckAll" title="เลือกทั้งหมดในหน้านี้"></th>
+                        <th>รหัส</th>
+                        <th>ชื่อหนังสือ</th>
+                        <th>สถานะ</th>
+                        <th>จำนวนยืม</th>
+                        <th>จัดการ</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
     </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='vendor/jquery.min.js') }}"></script>
+<script src="{{ url_for('static', filename='vendor/datatables.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/tables.js') }}" data-table="books"></script>
 {% endblock %}

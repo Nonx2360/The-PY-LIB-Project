@@ -1,0 +1,22 @@
+{
+    "emptyTable": "ไม่มีข้อมูล",
+    "info": "แสดง _START_ ถึง _END_ จาก _TOTAL_ รายการ",
+    "infoEmpty": "แสดง 0 ถึง 0 จาก 0 รายการ",
+    "infoFiltered": "(กรองจาก _MAX_ รายการทั้งหมด)",
+    "infoPostFix": "",
+    "lengthMenu": "แสดง _MENU_ รายการต่อหน้า",
+    "loadingRecords": "กำลังโหลด...",
+    "processing": "กำลังประมวลผล...",
+    "search": "ค้นหา:",
+    "zeroRecords": "ไม่พบข้อมูลที่ตรงกับการค้นหา",
+    "paginate": {
+        "first": "«",
+        "last": "»",
+        "next": "ถัดไป",
+        "previous": "ก่อนหน้า"
+    },
+    "aria": {
+        "sortAscending": "คลิกเพื่อเรียงเพิ่มขึ้น",
+        "sortDescending": "คลิกเพื่อเรียงลดลง"
+    }
+}

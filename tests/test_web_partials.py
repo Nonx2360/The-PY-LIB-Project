@@ -1,11 +1,11 @@
-# tests/test_web_partials.py — HTMX partials + header CSRF + analytics API
+# tests/test_web_partials.py — list-table API + header CSRF + analytics API
 #
-# The vendored frontend stack (HTMX/Alpine/SweetAlert2) leans on three
-# server-side behaviors:
-#   * /books /members /history honor ?q= (and /books ?status=) and render
-#     bare table partials for HX-Request:"true" — no page chrome;
+# The vendored frontend stack (jQuery/DataTables/Alpine/SweetAlert2) leans
+# on three server-side behaviors:
+#   * /books /members /history render a full-page skeleton table; all rows
+#     come from the /api/{books,members,history} DataTables feeds;
 #   * POSTs may carry the session CSRF token in the X-CSRF-Token header
-#     (htmx.body hx-headers wiring) instead of a hidden form field;
+#     (fetch-based table rows/bulk bar) instead of a hidden form field;
 #   * /api/analytics serves zero-filled dashboard series.
 import os
 import re
@@ -23,10 +23,9 @@ import web.app as web_app_mod  # noqa: E402
 
 CSRF_RE = re.compile(r'name="csrf_token" value="([^"]+)"')
 HX = {"HX-Request": "true"}
-_HX = {**HX, "X-CSRF-Token": ""}
 
 
-class TestWebPartials(unittest.TestCase):
+class TestWebTableApi(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         from config import settings as settings_mod
@@ -41,7 +40,6 @@ class TestWebPartials(unittest.TestCase):
         cls.app = web_app_mod.create_app()
         cls.client = cls.app.test_client()
         cls._login()
-        _HX["X-CSRF-Token"] = cls._csrf("/books")
 
     @classmethod
     def tearDownClass(cls):
@@ -83,62 +81,38 @@ class TestWebPartials(unittest.TestCase):
     def setUp(self):
         self._login()
 
+    def _dt(self, path, q="", order_col=0, order_dir="desc", **extra):
+        resp = self.client.get(path, query_string={
+            "draw": 1, "start": 0, "length": 50,
+            "search[value]": q,
+            "order[0][column]": order_col, "order[0][dir]": order_dir,
+            **extra})
+        self.assertEqual(resp.status_code, 200)
+        return resp.get_json()
+
+    def _post(self, path, data):
+        data = dict(data)
+        data["csrf_token"] = self._csrf(path)
+        resp = self.client.post(path, data=data)
+        return resp
+
     def _add_book(self, code, title):
-        resp = self.client.post("/books/add", data={
-            "code": code, "title": title,
-            "csrf_token": self._csrf("/books")})
+        resp = self._post("/books/add", {"code": code, "title": title})
         self.assertEqual(resp.status_code, 302)
         return harness.query(_env.db_path,
                              "SELECT id, status FROM books WHERE code=?",
                              (code,))[0]
 
     def _add_member(self, number, name_suffix=""):
-        resp = self.client.post("/members/add", data={
+        resp = self._post("/members/add", {
             "name": f"นักเรียนทดสอบ {number}{name_suffix}",
-            "grade": "ม.4/1", "number": number,
-            "csrf_token": self._csrf("/members")})
+            "grade": "ม.4/1", "number": number})
         self.assertEqual(resp.status_code, 302)
         return harness.query(_env.db_path,
                              "SELECT id FROM members WHERE number=?",
                              (number,))[0][0]
 
-    def _browse(self, path, qs=None):
-        return self.client.get(path, headers=HX, query_string=qs or {})
-
-    # ---------------- partials ----------------
-
-    def test_books_partial_is_fragment_not_page(self):
-        self._add_book("PW-100", "บทนำ Python")
-        resp = self._browse("/books", {"q": "Python"})
-        body = resp.get_data(as_text=True)
-        self.assertNotEqual(resp.status_code, 400)
-        self.assertNotIn("<html", body, "HX request must render the bare partial")
-        self.assertIn('id="booksTableWrap"', body)
-        self.assertIn("บทนำ Python", body)
-
-    def test_books_q_filters_rows(self):
-        self._add_book("PW-200", "บทนำ Python")
-        self._add_book("PW-201", "อัญมณีในแม่น้ำ")
-        resp = self._browse("/books", {"q": "Python"})
-        self.assertEqual(resp.status_code, 200)
-        body = resp.get_data(as_text=True)
-        self.assertNotIn("<html", body)
-        self.assertIn("บทนำ Python", body)
-        self.assertNotIn("อัญมณีในแม่น้ำ", body)
-
-    def test_books_status_filter(self):
-        self._add_book("PW-300", "บทนำ Python")
-        book2 = self._add_book("PW-301", "อัญมณีในแม่น้ำ")
-        # retire one through the sanctioned web flow, then filter by status
-        resp = self.client.post(f"/books/{book2[0]}/retire",
-                                data={"csrf_token": self._csrf("/books")})
-        self.assertEqual(resp.status_code, 302)
-        body = self._browse("/books", {"status": "ว่าง"}).get_data(as_text=True)
-        self.assertIn("PW-300", body)
-        self.assertNotIn("PW-301", body)
-        body = self._browse("/books", {"status": "หยุดให้บริการ"}).get_data(as_text=True)
-        self.assertIn("PW-301", body)
-        self.assertNotIn("PW-300", body)
+    # ---------------- page skeletons (no rows, no page chrome) ----------------
 
     def test_books_full_page_has_vendor_wiring(self):
         resp = self.client.get("/books")
@@ -146,33 +120,70 @@ class TestWebPartials(unittest.TestCase):
         body = resp.get_data(as_text=True)
         self.assertIn("<html", body)
         self.assertIn("vendor/sweetalert2.min.js", body)
-        self.assertIn("vendor/htmx.min.js", body)
+        self.assertIn("vendor/jquery.min.js", body)
+        self.assertIn("vendor/datatables.min.js", body)
+        self.assertIn('id="booksTable"', body)
         self.assertIn("vendor/alpine.min.js", body)
-        self.assertIn("hx-target", body)
-        self.assertIn("X-CSRF-Token", body)
+        self.assertIn('name="csrf_token"', body)
+        self.assertNotIn("htmx", body)
 
-    def test_members_q_filter(self):
+    def test_page_counts_render_in_header(self):
+        self._add_book("PW-000", "หัวกระดาษหน้า")
+        body = self.client.get("/books").get_data(as_text=True)
+        self.assertIn("หนังสือทั้งหมด (", body)
+        body = self.client.get("/members").get_data(as_text=True)
+        self.assertIn("รายชื่อสมาชิก (", body)
+        body = self.client.get("/history").get_data(as_text=True)
+        self.assertIn("ประวัติการยืม-คืน (", body)
+
+    # ---------------- /api books ----------------
+
+    def test_api_books_q_filters_rows(self):
+        self._add_book("PW-200", "บทนำส่วนนำ Python ฉบับเข้ม")
+        self._add_book("PW-201", "อัญมณีในแม่น้ำ")
+        payload = self._dt("/api/books", q="ฉบับเข้ม")
+        titles = [row["title"] for row in payload["data"]]
+        self.assertIn("บทนำส่วนนำ Python ฉบับเข้ม", titles)
+        self.assertNotIn("อัญมณีในแม่น้ำ", titles)
+        self.assertEqual(payload["recordsFiltered"], 1)
+
+    def test_api_books_status_filter(self):
+        book1 = self._add_book("PW-300", "กรองสถานะ ว่าง")
+        book2 = self._add_book("PW-301", "กรองสถานะ หยุด")
+        resp = self._post(f"/books/{book2[0]}/retire", {})
+        self.assertEqual(resp.status_code, 302)
+        codes = lambda p: [r["code"] for r in p["data"]]  # noqa: E731
+        ok = self._dt("/api/books", q="กรองสถานะ", status="ว่าง")
+        self.assertEqual(codes(ok), ["PW-300"])
+        gone = self._dt("/api/books", q="กรองสถานะ", status="หยุดให้บริการ")
+        self.assertEqual(codes(gone), ["PW-301"])
+
+    # ---------------- /api members + history ----------------
+
+    def test_api_members_q_filter(self):
         self._add_member("91001")
         self._add_member("91002", "นาย")
-        body = self._browse("/members", {"q": "91002"}).get_data(as_text=True)
-        self.assertNotIn("<html", body)
-        self.assertIn("91002", body)
-        self.assertNotIn("91001", body)
+        payload = self._dt("/api/members", q="91002")
+        numbers = [row["number"] for row in payload["data"]]
+        self.assertIn("91002", numbers)
+        self.assertNotIn("91001", numbers)
+        self.assertEqual(payload["recordsFiltered"], 1)
 
-    def test_history_q_filter(self):
+    def test_api_history_borrow_overdue_shape(self):
         member_id = self._add_member("91003")
-        book = self._add_book("PW-400", "บทนำ Python")
-        due = "2099-01-01"
-        resp = self.client.post("/borrow", data={
-            "member_id": member_id, "book_id": book[0], "due_date": due,
-            "csrf_token": self._csrf("/borrow")})
+        book = self._add_book("PW-400", "บทนำส่วนนำ Python เล่มนำโชค")
+        resp = self._post("/borrow", {
+            "member_id": member_id, "book_id": book[0],
+            "due_date": "2099-01-01"})
         self.assertEqual(resp.status_code, 302)
-        body = self._browse("/history", {"q": "บทนำ Python"}).get_data(as_text=True)
-        self.assertNotIn("<html", body)
-        self.assertIn("บทนำ Python", body)
-        self.assertIn("กำลังยืม", body)
-        body = self._browse("/history", {"q": "หนังสือที่ไม่มีตรงกันเลย"}).get_data(as_text=True)
-        self.assertIn("ไม่พบข้อมูลที่ตรงกับ", body)
+        payload = self._dt("/api/history", q="เล่มนำโชค")
+        rows = [r for r in payload["data"] if r["code"] == "PW-400"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["returned"], 0)   # กำลังยืม
+        self.assertEqual(rows[0]["name"], "นักเรียนทดสอบ 91003")
+        miss = self._dt("/api/history", q="ไม่มีอะไรตรงเลย")
+        self.assertEqual(miss["recordsFiltered"], 0)
+        self.assertEqual(miss["data"], [])
 
     # ---------------- header CSRF ----------------
 
@@ -196,7 +207,7 @@ class TestWebPartials(unittest.TestCase):
                             "SELECT id FROM books WHERE code='PW-BAD'")
         self.assertEqual(len(row), 0)
 
-    def test_post_with_bad_csrf_header_hx_gets_403(self):
+    def test_post_with_bad_csrf_header_ajax_gets_403(self):
         token = self._csrf("/books")
         resp = self.client.post("/books/add",
                                 data={"code": "PW-BAD2", "title": "x"},
@@ -219,9 +230,9 @@ class TestWebPartials(unittest.TestCase):
     def test_analytics_counts_today_borrow(self):
         member_id = self._add_member("91004")
         book = self._add_book("PW-500", "บทนำ Python")
-        self.client.post("/borrow", data={
+        self._post("/borrow", {
             "member_id": member_id, "book_id": book[0],
-            "due_date": "2099-01-01", "csrf_token": self._csrf("/borrow")})
+            "due_date": "2099-01-01"})
         payload = self.client.get("/api/analytics").get_json()
         self.assertGreaterEqual(payload["borrow_last_14_days"][-1]["count"], 1)
         # the just-borrowed book left ว่าง, so the donut sees it as borrowed

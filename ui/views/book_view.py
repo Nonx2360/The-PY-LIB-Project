@@ -26,6 +26,9 @@ class BookView(ctk.CTkFrame):
         self.base = BaseRepository()
         self._search_job = None
         self._import_running = False
+        self._selected = set()          # bulk-management selection (ids)
+        self._bulk_count_label = None
+        self._bulk_built = False
         self._build()
 
     def _build(self):
@@ -89,6 +92,11 @@ class BookView(ctk.CTkFrame):
         self.search_entry.pack(side="right")
         self.search_entry.bind("<KeyRelease>", self._on_search_key)
 
+        # bulk action bar — hidden until rows are ticked; sits between the
+        # header and the bounded list (selection survives paging/search)
+        self.bulk_bar = ctk.CTkFrame(list_card, fg_color=theme.PRIMARY,
+                                     corner_radius=10)
+
         # bounded list window: renders only the first 50 rows plus a
         # "show more" button — building a row costs ~10 Tk windows, so
         # rendering all 1000+ rows at once froze the app and could exhaust
@@ -136,40 +144,49 @@ class BookView(ctk.CTkFrame):
     def _book_row(self, b):
         row = theme.card(self.list_frame, corner_radius=10)
         row.pack(fill="x", padx=4, pady=4)
-        row.grid_columnconfigure(1, weight=1)
+        row.grid_columnconfigure(2, weight=1)
+
+        check = ctk.CTkCheckBox(row, text="", width=24,
+                                checkbox_width=18, checkbox_height=18)
+        check.grid(row=0, column=0, rowspan=2, padx=(10, 4), pady=8)
+        if b[0] in self._selected:
+            check.select()
+        # command is wired after assignment so the lambda can close over the
+        # very checkbox it belongs to (no forward-reference at creation)
+        check.configure(command=lambda bid=b[0], c=check: self._toggle_select(bid, c))
 
         ctk.CTkFrame(row, width=4, height=40, fg_color=theme.INFO,
-                     corner_radius=2).grid(row=0, column=0, rowspan=2, padx=(10, 12), pady=8)
+                     corner_radius=2).grid(row=0, column=1, rowspan=2, padx=(4, 10), pady=8)
         ctk.CTkLabel(row, text=b[2], font=theme.font(15, bold=True),
                      text_color=theme.text_color(), anchor="w").grid(
-            row=0, column=1, sticky="w", pady=(8, 0))
+            row=0, column=2, sticky="w", pady=(8, 0))
         ctk.CTkLabel(row, text=f"รหัส {b[1]}", font=theme.font(12),
                      text_color=theme.muted_color(), anchor="w").grid(
-            row=1, column=1, sticky="w", pady=(0, 8))
+            row=1, column=2, sticky="w", pady=(0, 8))
 
         status = (b[3] or "").strip()
         status_badge = (theme.badge_green(row, BOOK_STATUS_AVAILABLE) if status in (BOOK_STATUS_AVAILABLE, "Available", "")
                         else theme.badge_blue(row, BOOK_STATUS_RETIRED) if status == BOOK_STATUS_RETIRED
                         else theme.badge_red(row, BOOK_STATUS_BORROWED) if "ยืม" in status
                         else theme.badge_amber(row, status))
-        status_badge.grid(row=0, column=2, rowspan=2, padx=6)
+        status_badge.grid(row=0, column=3, rowspan=2, padx=6)
 
         if status == BOOK_STATUS_AVAILABLE:
             theme.ghost_button(row, "หยุด", lambda bb=b: self._retire_book(bb),
-                               width=56, height=30).grid(row=0, column=3, rowspan=2, padx=(6, 0))
+                               width=56, height=30).grid(row=0, column=4, rowspan=2, padx=(6, 0))
             theme.ghost_button(row, "ลบ", lambda bb=b: self._delete_book(bb),
                                width=56, height=30, text_color=theme.DANGER).grid(
-                row=0, column=4, rowspan=2, padx=(6, 10))
+                row=0, column=5, rowspan=2, padx=(6, 10))
         elif status == BOOK_STATUS_RETIRED:
             theme.ghost_button(row, "กลับมา", lambda bb=b: self._restore_book(bb),
-                               width=56, height=30).grid(row=0, column=3, rowspan=2, padx=(6, 0))
+                               width=56, height=30).grid(row=0, column=4, rowspan=2, padx=(6, 0))
             theme.ghost_button(row, "ลบถาวร", lambda bb=b: self._delete_book(bb),
                                width=76, height=30, text_color=theme.DANGER).grid(
-                row=0, column=4, rowspan=2, padx=(6, 10))
+                row=0, column=5, rowspan=2, padx=(6, 10))
         else:
             theme.ghost_button(row, "ลบ", lambda bb=b: self._delete_book(bb),
                                width=56, height=30, text_color=theme.DANGER).grid(
-                row=0, column=3, rowspan=2, padx=(6, 10))
+                row=0, column=4, rowspan=2, padx=(6, 10))
 
     # ================= actions =================
     def _add_book(self):
@@ -263,6 +280,101 @@ class BookView(ctk.CTkFrame):
         except Exception as e:
             logger.error(f"delete_book error: {e}", exc_info=True)
             show_toast(self, "ลบไม่สำเร็จ — ข้อมูลยังถูกอ้างอิงจากประวัติการใช้งาน", "red")
+
+    # ================= bulk management =================
+    def _toggle_select(self, book_id, box):
+        if box.get():
+            self._selected.add(book_id)
+        else:
+            self._selected.discard(book_id)
+        self._sync_bulk_bar()
+
+    def _sync_bulk_bar(self):
+        """Show the bar when rows are ticked, hide it when none remain."""
+        n = len(self._selected)
+        if n == 0:
+            self._bulk_count_label = None
+            if self.bulk_bar.winfo_manager():
+                self.bulk_bar.pack_forget()
+            return
+        if not self.bulk_bar.winfo_manager():
+            if not self._bulk_built:
+                self._build_bulk_bar()
+                self._bulk_built = True
+            # keep the bar visually above the list even though it was
+            # created before the list frame got packed
+            self.bulk_bar.pack(fill="x", padx=10, pady=(0, 6),
+                               before=self.list_frame)
+        if self._bulk_count_label is not None:
+            self._bulk_count_label.configure(text=f"เลือกไว้ {n} รายการ")
+
+    def _build_bulk_bar(self):
+        label = ctk.CTkLabel(self.bulk_bar, text="",
+                             font=theme.font(13, bold=True),
+                             text_color="#FFFFFF")
+        label.pack(side="left", padx=(12, 6), pady=8)
+        self._bulk_count_label = label
+        theme.secondary_button(self.bulk_bar, "หยุดให้บริการ",
+                               self._bulk_retire, height=30).pack(side="left", padx=3)
+        theme.secondary_button(self.bulk_bar, "ให้บริการกลับมา",
+                               self._bulk_restore, height=30).pack(side="left", padx=3)
+        theme.secondary_button(self.bulk_bar, "ลบที่เลือก",
+                               self._bulk_delete, height=30,
+                               text_color=theme.DANGER).pack(side="left", padx=3)
+        theme.secondary_button(self.bulk_bar, "เคลียร์การเลือก",
+                               self._clear_selection, height=30).pack(side="left", padx=(3, 10))
+
+    def _clear_selection(self):
+        self._selected.clear()
+        self._sync_bulk_bar()
+        if self._alive():
+            self._display_books()    # rebuild rows so no checkbox stays ticked
+
+    def _bulk_retire(self):
+        ids = sorted(self._selected)
+        if not ids or not show_confirm_dialog(
+                self, "ยืนยันการหยุดให้บริการ",
+                f"หยุดให้บริการหนังสือที่เลือก {len(ids)} เล่ม?\n"
+                "เล่มที่กำลังถูกยืมอยู่จะถูกข้าม"):
+            return
+        changed = self.repo.bulk_retire(ids)
+        skipped = len(ids) - changed
+        show_toast(self, f"สำเร็จ {changed} / ข้าม {skipped} รายการ",
+                   "green" if changed and not skipped else "amber")
+        logger.info("desktop books bulk: retire requested=%d changed=%d",
+                    len(ids), changed)
+        self._clear_selection()
+
+    def _bulk_restore(self):
+        ids = sorted(self._selected)
+        if not ids or not show_confirm_dialog(
+                self, "ยืนยันการให้บริการกลับมา",
+                f"ให้บริการหนังสือที่เลือกกลับมา {len(ids)} เล่ม?\n"
+                "เล่มที่ไม่ได้หยุดให้บริการจะถูกข้าม"):
+            return
+        changed = self.repo.bulk_restore(ids)
+        skipped = len(ids) - changed
+        show_toast(self, f"สำเร็จ {changed} / ข้าม {skipped} รายการ",
+                   "green" if changed and not skipped else "amber")
+        logger.info("desktop books bulk: restore requested=%d changed=%d",
+                    len(ids), changed)
+        self._clear_selection()
+
+    def _bulk_delete(self):
+        ids = sorted(self._selected)
+        if not ids or not show_confirm_dialog(
+                self, "ยืนยันการลบ",
+                f"ลบหนังสือที่เลือก {len(ids)} เล่ม?\n"
+                "เล่มที่หยุดให้บริการจะถูกลบถาวรพร้อมประวัติการยืม "
+                "(ลบแล้วไม่สามารถย้อนกลับ)\n"
+                "เล่มที่มีประวัติการยืมแต่ยังให้บริการอยู่จะถูกข้าม"):
+            return
+        deleted, skipped = self.repo.delete_many(ids)
+        show_toast(self, f"ลบสำเร็จ {deleted} / ข้าม {skipped} รายการ",
+                   "green" if deleted and not skipped else "amber")
+        logger.info("desktop books bulk: delete requested=%d deleted=%d "
+                    "skipped=%d", len(ids), deleted, skipped)
+        self._clear_selection()
 
     def _export_template(self):
         try:

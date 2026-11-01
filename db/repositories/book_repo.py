@@ -63,5 +63,83 @@ class BookRepository(BaseRepository):
         query = "UPDATE books SET status = ? WHERE id = ?"
         self.execute(query, (status, book_id))
 
+    # ---------------- bulk management ----------------
+
+    def bulk_retire(self, ids):
+        """Withdraw several available copies; already-borrowed/retired skip.
+
+        Returns how many rows actually changed. Uses one atomic UPDATE so
+        a batch application (web admin selects 50 rows) is one commit.
+        """
+        ids = [i for i in ids if i]
+        if not ids:
+            return 0
+        marks = ",".join("?" * len(ids))
+
+        def _retire(conn):
+            cur = conn.execute(
+                f"UPDATE books SET status = ? WHERE status = ? "
+                f"AND id IN ({marks})",
+                ("หยุดให้บริการ", "ว่าง", *ids))
+            return cur.rowcount
+
+        return self.transact(_retire)
+
+    def bulk_restore(self, ids):
+        """Bring retired copies back; everything else is left untouched."""
+        ids = [i for i in ids if i]
+        if not ids:
+            return 0
+        marks = ",".join("?" * len(ids))
+
+        def _restore(conn):
+            cur = conn.execute(
+                f"UPDATE books SET status = ? WHERE status = ? "
+                f"AND id IN ({marks})",
+                ("ว่าง", "หยุดให้บริการ", *ids))
+            return cur.rowcount
+
+        return self.transact(_restore)
+
+    def delete_many(self, ids):
+        """Delete several books in ONE transaction, skipping the unsafe.
+
+        Semantics per book:
+          * หยุดให้บริการ  -> hospital purge: erased together with its
+            borrow_log rows (the sanctioned two-step retire->purge flow);
+          * other statuses -> hard delete ONLY when the copy has no borrow
+            history (foreign key would block it anyway);
+          * everything else (borrowed, has history) -> skipped.
+        Returns (deleted, skipped).
+        """
+        ids = [i for i in ids if i]
+        if not ids:
+            return 0, 0
+
+        def _del(conn):
+            deleted = skipped = 0
+            for bid in ids:
+                row = conn.execute(
+                    "SELECT status FROM books WHERE id=?", (bid,)).fetchone()
+                if not row:
+                    skipped += 1
+                    continue
+                has_log = conn.execute(
+                    "SELECT 1 FROM borrow_log WHERE book_id=? LIMIT 1",
+                    (bid,)).fetchone()
+                if row[0] == "หยุดให้บริการ":
+                    conn.execute(
+                        "DELETE FROM borrow_log WHERE book_id=?", (bid,))
+                    conn.execute("DELETE FROM books WHERE id=?", (bid,))
+                    deleted += 1
+                elif has_log:
+                    skipped += 1
+                else:
+                    conn.execute("DELETE FROM books WHERE id=?", (bid,))
+                    deleted += 1
+            return deleted, skipped
+
+        return self.transact(_del)
+
     def delete(self, book_id):
         self.execute("DELETE FROM books WHERE id = ?", (book_id,))

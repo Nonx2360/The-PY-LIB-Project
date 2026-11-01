@@ -1,13 +1,14 @@
 /* THE PY-LIB — shared browser helpers for the WebUI
  *
  * Works with the vendored stack loaded in base.html, in this exact order:
- *   sweetalert2 → htmx → ui.js (this file) → alpine
+ *   sweetalert2 → ui.js (this file) → [page scripts: jQuery + DataTables]
+ *   → alpine
  *
  * Responsibilities:
  *   - themed confirm()/alert()/toast() built on SweetAlert2
  *   - converts all server-rendered .alert flash messages into toasts
  *   - intercepts <form data-confirm="..."> submissions (delegated, so it
- *     also covers rows rendered by HTMX partial swaps)
+ *     also covers rows rendered dynamically by the list-table engine)
  *   - auto-inits Flatpickr on [data-flatpickr] inputs (JS + Thai locale
  *     load in the pages that need them, e.g. borrow)
  *   - registers the Alpine "pylibBorrow" component used by borrow.html
@@ -113,7 +114,7 @@
     /* ---- data-confirm: replaces inline onclick="return confirm(...)" ----
      * capture phase so the native submit is stopped before anything else.
      * data-confirm may sit on the <form> or on the triggering submit button
-     * (per-row messages live on the button for HTMX-swapped rows). */
+     * (per-row messages live on the button for dynamically rendered rows). */
     document.addEventListener("submit", function (e) {
         var form = e.target;
         if (!form || !form.getAttribute) return;

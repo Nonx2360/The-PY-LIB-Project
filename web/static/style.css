@@ -354,9 +354,8 @@ input:focus-visible, select:focus-visible {
     .login-container { border-radius: 12px; }
     .login-brand h1 { font-size: 22px; }
 }
-/* ── Vendored-stack glue: Alpine x-cloak, HTMX request state, dialogs ── */
+/* ── Vendored-stack glue: Alpine x-cloak, request-state overlay, dialogs ── */
 [x-cloak] { display: none !important; }
-.htmx-request { opacity: 0.55; pointer-events: none; transition: opacity 0.15s ease; }
 .swal2-container { z-index: 2000; }
 .swal2-popup {
     font-family: var(--font-body);
@@ -365,7 +364,7 @@ input:focus-visible, select:focus-visible {
 }
 .swal2-title { font-family: var(--font-display); font-size: 20px; }
 
-/* ── HTMX table filter toolbar ── */
+/* ── Table filter toolbar ── */
 .table-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .status-filter {
     padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-input);
@@ -391,24 +390,94 @@ input:focus-visible, select:focus-visible {
     .chart-grid { grid-template-columns: 1fr; }
 }
 
-/* ── list pagination (1000+ row catalogs) + Excel import row ── */
-.pager {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 10px; flex-wrap: wrap; padding-top: 12px; margin-top: 4px;
+/* ── jQuery DataTables (vendored 1.13.8) — styled by hand against the
+   Reading Room tokens; no official DataTables CSS is vendored ── */
+.dataTables_wrapper { margin-top: 4px; }
+.dataTables_wrapper .dataTables_length {
+    display: inline-block; margin: 6px 16px 6px 0;
+    font-size: 13.5px; color: var(--ink-2);
 }
-.pager-info { font-size: 13px; color: var(--ink-2); }
-.pager-btns { display: flex; gap: 4px; flex-wrap: wrap; }
-.page-btn {
-    min-width: 30px; padding: 5px 9px; text-align: center; text-decoration: none;
+.dataTables_wrapper .dataTables_length select {
+    border: 1px solid var(--line); border-radius: var(--radius-input);
+    background: var(--surface); color: var(--ink);
+    font-family: var(--font-body); font-size: 13.5px; padding: 4px 8px;
+}
+.dataTables_wrapper .dataTables_filter {
+    float: right; margin: 6px 0;
+}
+.dataTables_wrapper .dataTables_filter input {
+    border: 1px solid var(--line); border-radius: var(--radius-input);
+    background: var(--surface); color: var(--ink);
+    font-family: var(--font-body); font-size: 13.5px;
+    padding: 6px 11px; min-width: 220px;
+}
+.dataTables_wrapper .dataTables_filter input:focus {
+    outline: 2px solid var(--marigold-bright); border-color: transparent;
+}
+.dataTables_wrapper .dataTables_processing {
+    clear: both; text-align: center; padding: 8px 0;
+    color: var(--ink-3); font-size: 13px;
+}
+table.dataTable { margin: 0; }
+table.dataTable thead th { cursor: pointer; user-select: none; }
+table.dataTable thead th.sorting::after,
+table.dataTable thead th.sorting_asc::after,
+table.dataTable thead th.sorting_desc::after {
+    content: "↕"; margin-left: 6px; color: var(--line-strong);
+    font-size: 11px; opacity: .8;
+}
+table.dataTable thead th.sorting_asc::after { content: "↑"; color: var(--navy); }
+table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy); }
+.dataTables_wrapper .dataTables_info {
+    padding-top: 10px; font-size: 13px; color: var(--ink-3);
+}
+.dataTables_wrapper .dataTables_paginate {
+    float: right; padding-top: 6px;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button {
+    display: inline-block; min-width: 30px; margin-left: 4px;
+    padding: 5px 9px; text-align: center;
     border: 1px solid var(--line); border-radius: 8px;
-    background: var(--surface); color: var(--ink-2); font-size: 13px;
+    background: var(--surface); color: var(--ink-2) !important;
+    font-size: 13px; text-decoration: none;
 }
-.page-btn:hover { background: var(--surface-hover); color: var(--ink); }
-.page-active {
+.dataTables_wrapper .dataTables_paginate .paginate_button:hover {
+    background: var(--surface-hover); color: var(--ink) !important;
+}
+.dataTables_wrapper .dataTables_paginate .paginate_button.current {
     background: var(--navy-wash); border-color: var(--navy);
-    color: var(--navy); font-weight: 600;
+    color: var(--navy) !important; font-weight: 600;
 }
-.pager-gap { color: var(--ink-3); align-self: center; font-size: 12px; padding: 0 3px; }
+.dataTables_wrapper .dataTables_paginate .paginate_button.disabled {
+    opacity: .45; cursor: default;
+}
+.dataTables_wrapper .dataTables_empty {
+    text-align: center; color: var(--ink-3); padding: 20px 0;
+}
+
+/* ── bulk management: checkbox column + action bar ── */
+.dt-check { width: 38px; min-width: 38px; text-align: center; padding-left: 10px; }
+#booksCheckAll, #membersCheckAll, .row-check {
+    width: 15px; height: 15px; vertical-align: middle;
+    accent-color: var(--navy); cursor: pointer;
+}
+.bulk-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    background: var(--navy-wash); border: 1px solid transparent;
+    border-radius: var(--radius-btn); padding: 9px 13px; margin-bottom: 12px;
+}
+.bulk-bar .bulk-count { font-weight: 600; color: var(--navy-deep); }
+.bulk-bar .bulk-hint {
+    color: var(--ink-2); font-size: 12.5px; margin-left: auto;
+}
+@media (max-width: 720px) {
+    .bulk-bar .bulk-hint { margin-left: 0; width: 100%; }
+    .dataTables_wrapper .dataTables_filter { float: none; }
+    .dataTables_wrapper .dataTables_filter input { min-width: 0; width: 100%; }
+    .dataTables_wrapper .dataTables_paginate { float: none; }
+}
+
+/* ── Excel import row (books page) ── */
 .import-row {
     display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
     margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line);

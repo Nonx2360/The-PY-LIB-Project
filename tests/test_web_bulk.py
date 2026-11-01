@@ -1,11 +1,16 @@
-# tests/test_web_bulk.py — bulk Excel import + large-catalog pagination
+# tests/test_web_bulk.py — bulk Excel import + server-side DataTables feeds
 #
-# The library loads ~1000+ books at once. Two things must hold:
+# The library loads ~1000+ books at once. Three things must hold:
 #   * an Excel import of 1000 rows lands in ONE transaction (no hang, no
 #     partial catalog) and reports what it skipped instead of erroring;
-#   * every list page paginates server-side (PAGE_SIZE rows + pager), so
-#     the render stays cheap no matter how big the tables grow.
+#   * the list pages are fed by /api/{books,members,history} in the
+#     DataTables server-side protocol, bounded per request so a 10,000-row
+#     catalog costs the same as a 10-row one (only one page is ever SELECTed);
+#   * the bulk endpoints (/books/bulk, /members/bulk) apply many actions in
+#     one atomic shot and skip rows that must not be touched instead of
+#     failing the batch.
 import io
+import json
 import os
 import re
 import sys
@@ -97,11 +102,35 @@ class TestWebBulk(unittest.TestCase):
             resp = self.client.get(resp.headers["Location"])
         return resp
 
-    def _hx(self, path, qs=None):
-        return self.client.get(path, headers=HX, query_string=qs or {})
+    def _dt(self, path, draw=1, start=0, length=50, q="", status=None,
+            order_col=0, order_dir="desc"):
+        """Minimal replay of what the vendored DataTables sends."""
+        qs = {"draw": draw, "start": start, "length": length,
+              "search[value]": q,
+              "order[0][column]": order_col,
+              "order[0][dir]": order_dir}
+        if status:
+            qs["status"] = status
+        resp = self.client.get(path, query_string=qs)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.content_type.startswith("application/json"))
+        payload = resp.get_json()
+        self.assertIn("recordsTotal", payload)
+        self.assertEqual(payload["draw"], draw)
+        return payload
+
+    def _bulk(self, path, payload, token=None):
+        return self.client.post(
+            path,
+            data=json.dumps(payload),
+            content_type="application/json",
+            headers={"X-CSRF-Token": token or self._csrf("/books")})
 
     def _book_count(self):
         return len(harness.query(_env.db_path, "SELECT 1 FROM books"))
+
+    def _codes(self, payload, key="code"):
+        return [row[key] for row in payload["data"]]
 
     # ---------------- repo bulk insert ----------------
 
@@ -190,65 +219,100 @@ class TestWebBulk(unittest.TestCase):
         self.assertIn("spreadsheetml", resp.headers["Content-Type"])
         self.assertGreater(len(resp.get_data()), 3000)  # a real .xlsx grows here
 
-    # ---------------- pagination ----------------
+    # ---------------- DataTables server-side API ----------------
 
-    def test_books_pagination_slices_and_clamps(self):
+    def test_books_api_page1_slices_newest_first(self):
         from db.repositories.book_repo import BookRepository
-        from web.app import PAGE_SIZE
         BookRepository().add_many(
             [(f"PAG-{i:04d}", f"หนังสือแบ่งหน้า {i}") for i in range(1, 121)])
         total = self._book_count()                   # includes sibling seeds
-        pages = (total + PAGE_SIZE - 1) // PAGE_SIZE
-        # page 1 holds the 50 newest rows, which are this block: PAG-0120..0071
-        body = self._hx("/books").get_data(as_text=True)
-        self.assertIn(f"รวม {total} เล่ม", body)
-        self.assertIn("PAG-0120", body)
-        self.assertIn("PAG-0071", body)
-        self.assertNotIn("PAG-0070", body)
-        # page 3 exists and shading marks it active
-        body = self._hx("/books", {"page": 3}).get_data(as_text=True)
-        self.assertIn(f"หน้า 3 จาก {pages}", body)
-        self.assertIn("page-active", body)
-        self.assertNotIn("PAG-0069", body)           # page-2 territory
-        # out-of-range request clamps to the last page (no crash, no empty lie)
-        body = self._hx("/books", {"page": 999}).get_data(as_text=True)
-        self.assertIn(f"หน้า {pages} จาก {pages}", body)
-        self.assertNotIn("PAG-0120", body)           # newest row is on page 1
+        payload = self._dt("/api/books")
+        self.assertEqual(payload["recordsTotal"], total)
+        self.assertEqual(payload["recordsFiltered"], total)
+        self.assertEqual(len(payload["data"]), 50)   # page 1 of the newest
+        codes = self._codes(payload)
+        self.assertEqual(codes[0], "PAG-0120")       # newest first
+        self.assertEqual(codes[49], "PAG-0071")
+        self.assertNotIn("PAG-0070", codes)          # page-2 territory
+        self.assertIn("status", payload["data"][0])  # row shape for the UI
 
-    def test_books_pagination_keeps_search_context(self):
-        # seed its own rows (OR IGNORE keeps re-seeding idempotent; unittest
-        # discovery runs methods alphabetically, so ordering may vary)
+    def test_books_api_page2_offset_and_clamped_start(self):
+        # start=100 walks past page 1 into the 51st row; overshooting start
+        # (a bulk delete can empty the browser's page) clamps back onto the
+        # last full page instead of answering with an empty sheet
+        payload = self._dt("/api/books", start=100)
+        codes = self._codes(payload)
+        self.assertEqual(len(codes), 50)             # full 50-row page
+        self.assertEqual(codes[0], "PAG-0020")       # 100 rows deep
+        payload = self._dt("/api/books", start=99999)
+        total = payload["recordsTotal"]
+        self.assertEqual(len(self._codes(payload)), (total - 1) % 50 + 1)
+        first_of_last = self._codes(
+            self._dt("/api/books", start=((total - 1) // 50) * 50))[0]
+        self.assertEqual(self._codes(payload)[0], first_of_last)
+
+    def test_books_api_search_filters(self):
         from db.repositories.book_repo import BookRepository
         BookRepository().add_many(
             [(f"PAGS-{i:04d}", f"ค้นหาแบ่งหน้า {i}") for i in range(1, 121)])
-        # q matches exactly the 120 seeded rows -> multi-page with q carried on
-        body = self._hx("/books", {"q": "ค้นหาแบ่งหน้า"}).get_data(as_text=True)
-        self.assertIn("รวม 120 เล่ม", body)
-        self.assertIn("PAGS-0120", body)
-        self.assertNotIn("PAGS-0069", body)             # page 2 territory
-        self.assertIn("q=%", body)                      # q survives in pager links
+        payload = self._dt("/api/books", q="ค้นหาแบ่งหน้า")
+        self.assertEqual(payload["recordsFiltered"], 120)
+        codes = self._codes(payload)
+        self.assertEqual(codes[0], "PAGS-0120")
+        self.assertTrue(all(c.startswith("PAGS-") for c in codes))
 
-    def test_members_pagination(self):
+    def test_books_api_order_asc_and_desc(self):
+        from db.repositories.book_repo import BookRepository
+        BookRepository().add_many(
+            [(f"ORD-{i:04d}", f"เรียงหน้าที่ {i}") for i in range(1, 13)])
+        up = self._dt("/api/books", q="เรียงหน้าที่", order_col=1,
+                      order_dir="asc")
+        self.assertEqual(self._codes(up)[0], "ORD-0001")
+        down = self._dt("/api/books", q="เรียงหน้าที่", order_col=1,
+                        order_dir="desc")
+        self.assertEqual(self._codes(down)[0], "ORD-0012")
+
+    def test_books_api_length_clamped_to_whitelist(self):
+        # only 10/25/50/100 are offered by the UI; anything else -> 50
+        from db.repositories.book_repo import BookRepository
+        BookRepository().add_many(
+            [(f"CLP-{i:04d}", f"จำกัดหน้าละ {i}") for i in range(1, 61)])
+        payload = self._dt("/api/books", q="จำกัดหน้าละ", length=999)
+        self.assertEqual(len(payload["data"]), 50)
+
+    def test_books_api_order_column_out_of_whitelist_defaults_newest(self):
+        payload = self._dt("/api/books", q="จำกัดหน้าละ", order_col=77)
+        self.assertEqual(self._codes(payload)[0], "CLP-0060")
+
+    def test_books_api_status_filter(self):
+        from db.repositories.book_repo import BookRepository
+        BookRepository().add("SRS-001", "กรองสถานะ ว่าง")
+        srs2 = BookRepository().add("SRS-002", "กรองสถานะ หยุด")
+        resp = self.client.post(f"/books/{srs2}/retire",
+                                data={"csrf_token": self._csrf("/books")})
+        self.assertEqual(resp.status_code, 302)
+        ok = self._dt("/api/books", q="กรองสถานะ", status="ว่าง")
+        self.assertEqual(self._codes(ok), ["SRS-001"])
+        gone = self._dt("/api/books", q="กรองสถานะ", status="หยุดให้บริการ")
+        self.assertEqual(self._codes(gone), ["SRS-002"])
+
+    def test_members_api_pagination(self):
         from db.repositories.member_repo import MemberRepository
         repo = MemberRepository()
         for i in range(1, 61):
             repo.add(f"สมาชิกแบ่งหน้า {i:02d}", f"ม.5/{(i % 9) + 1}",
                      f"95{i:03d}", "2026-01-01", "2027-01-01", "qr", None)
-        total = len(harness.query(_env.db_path, "SELECT 1 FROM members"))
-        seeded = len(harness.query(
-            _env.db_path, "SELECT 1 FROM members WHERE name LIKE 'สมาชิกแบ่งหน้า %'"))
-        self.assertEqual(seeded, 60)
-        # page 1 = the 50 newest ids, page 2 = the remainder
-        body = self._hx("/members").get_data(as_text=True)
-        self.assertIn(f"รวม {total} คน", body)
-        self.assertIn("สมาชิกแบ่งหน้า 60", body)
-        body = self._hx("/members", {"page": 2}).get_data(as_text=True)
-        self.assertIn("หน้า 2 จาก 2", body)
-        self.assertIn("สมาชิกแบ่งหน้า 10 ", body)
-        self.assertIn("สมาชิกแบ่งหน้า 01 ", body)
-        self.assertNotIn("สมาชิกแบ่งหน้า 60", body)
+        payload = self._dt("/api/members")
+        total_members = len(harness.query(_env.db_path, "SELECT 1 FROM members"))
+        self.assertEqual(payload["recordsTotal"], total_members)
+        self.assertEqual(payload["data"][0]["name"], "สมาชิกแบ่งหน้า 60")
+        page2 = self._dt("/api/members", start=50)
+        names = [row["name"] for row in page2["data"]]
+        self.assertIn("สมาชิกแบ่งหน้า 10", names)
+        self.assertIn("สมาชิกแบ่งหน้า 01", names)
+        self.assertNotIn("สมาชิกแบ่งหน้า 60", names)
 
-    def test_history_pagination(self):
+    def test_history_api_pagination(self):
         from db.repositories.book_repo import BookRepository
         from db.repositories.member_repo import MemberRepository
         from db.repositories.base_repo import BaseRepository
@@ -267,12 +331,177 @@ class TestWebBulk(unittest.TestCase):
                 [(member_id, book_ids[i % 10], ) for i in range(120)])
         BaseRepository().transact(_borrows)
 
-        body = self._hx("/history").get_data(as_text=True)
-        self.assertIn("รวม 120 รายการ", body)
-        self.assertIn("หน้า 1 จาก 3", body)
-        body = self._hx("/history", {"page": 3}).get_data(as_text=True)
-        self.assertIn("หน้า 3 จาก 3", body)
-        self.assertIn("สมาชิกประวัติ", body)
+        total = len(harness.query(_env.db_path, "SELECT 1 FROM borrow_log"))
+        payload = self._dt("/api/history")
+        self.assertEqual(payload["recordsTotal"], total)
+        self.assertEqual(payload["recordsFiltered"], total)
+        self.assertEqual(len(payload["data"]), 50)
+        self.assertEqual(payload["data"][0]["title"], "หนังสือประวัติ 10")
+        page3 = self._dt("/api/history", start=100)
+        self.assertEqual(page3["data"][0]["title"], "หนังสือประวัติ 10")
+        self.assertEqual(page3["data"][0]["returned"], 1)
+        self.assertEqual(len(page3["data"]), total - 100)
+
+    def test_history_api_search(self):
+        payload = self._dt("/api/history", q="สมาชิกประวัติ")
+        self.assertEqual(payload["recordsFiltered"], 120)
+        miss = self._dt("/api/history", q="ไม่มีอะไรตรงเลย")
+        self.assertEqual(miss["recordsFiltered"], 0)
+        self.assertEqual(miss["data"], [])
+
+    # ---------------- bulk endpoints ----------------
+
+    def test_books_bulk_csrf_header(self):
+        token = self._csrf("/books")
+        ok = self._bulk("/books/bulk",
+                        {"action": "retire", "ids": []}, token=token)
+        self.assertEqual(ok.status_code, 200)     # the fetch header path
+        bad = self.client.post(
+            "/books/bulk", data=json.dumps({"action": "delete", "ids": [1]}),
+            content_type="application/json",
+            headers={**HX, "X-CSRF-Token": token + "tampered"})
+        self.assertEqual(bad.status_code, 403)    # nothing deleted
+
+    def test_books_bulk_delete_semantics(self):
+        from db.repositories.book_repo import BookRepository
+        from db.repositories.member_repo import MemberRepository
+        from db.repositories.base_repo import BaseRepository
+        plain = BookRepository().add("BKD-PLAIN", "ลบกลุ่ม เล่มธรรมดา")
+        active = BookRepository().add("BKD-ACTIVE", "ลบกลุ่ม ยืมอยู่")
+        purged = BookRepository().add("BKD-PURGED", "ลบกลุ่ม หยุดให้บริการ")
+        member_id = MemberRepository().add(
+            "สมาชิกลบกลุ่ม", "ม.4/3", "97002",
+            "2026-01-01", "2027-01-01", "qr", None)
+        resp = self.client.post("/borrow", data={
+            "member_id": member_id, "book_id": active,
+            "due_date": "2099-01-01", "csrf_token": self._csrf("/borrow")})
+        self.assertEqual(resp.status_code, 302)
+
+        def _past_history(conn):
+            conn.execute(
+                "INSERT INTO borrow_log (member_id, book_id, borrow_date, "
+                "return_due, returned) VALUES (?, ?, '2025-01-01', "
+                "'2025-01-15', 1)", (member_id, purged))
+        BaseRepository().transact(_past_history)
+        resp = self.client.post(f"/books/{purged}/retire",
+                                data={"csrf_token": self._csrf("/books")})
+        self.assertEqual(resp.status_code, 302)
+
+        resp = self._bulk("/books/bulk", {"action": "delete",
+                                          "ids": [plain, active, purged]})
+        self.assertEqual(resp.status_code, 200)
+        out = resp.get_json()
+        self.assertEqual(out["status"], "ok")
+        self.assertEqual(out["deleted"], 2)       # plain + retired-purge
+        self.assertEqual(out["skipped"], 1)       # the actively-borrowed copy
+        self.assertEqual(
+            len(harness.query(_env.db_path,
+                              "SELECT 1 FROM books WHERE code='BKD-PLAIN'")), 0)
+        self.assertEqual(
+            len(harness.query(_env.db_path,
+                              "SELECT 1 FROM books WHERE code='BKD-ACTIVE'")), 1)
+        # the skipped copy keeps its open borrow_log row untouched
+        self.assertEqual(
+            len(harness.query(
+                _env.db_path,
+                "SELECT 1 FROM borrow_log WHERE book_id=? AND returned=0",
+                (active,))), 1)
+        # the retired copy is purged WITH its borrow_log rows
+        self.assertEqual(
+            len(harness.query(
+                _env.db_path,
+                "SELECT 1 FROM books WHERE code='BKD-PURGED'")), 0)
+        self.assertEqual(
+            len(harness.query(
+                _env.db_path,
+                "SELECT 1 FROM borrow_log WHERE book_id=?", (purged,))), 0)
+
+    def test_books_bulk_id_cap_is_400(self):
+        resp = self._bulk("/books/bulk",
+                          {"action": "retire",
+                           "ids": [str(n) for n in range(1, 202)]})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("เลือกได้ครั้งละสูงสุด 200 รายการ",
+                      resp.get_json()["message"])
+
+    def test_books_bulk_retire_and_restore(self):
+        from db.repositories.book_repo import BookRepository
+        from db.repositories.member_repo import MemberRepository
+        # BR-001 ว่าง | BR-002 ยืมอยู่ | BR-003 หยุดให้บริการแล้ว
+        br1 = BookRepository().add("BR-001", "หนังสือหยุดกลุ่ม A")
+        br2 = BookRepository().add("BR-002", "หนังสือหยุดกลุ่ม B")
+        br3 = BookRepository().add("BR-003", "หนังสือหยุดกลุ่ม C")
+        member_id = MemberRepository().add(
+            "สมาชิกหยุดกลุ่ม", "ม.4/2", "97001",
+            "2026-01-01", "2027-01-01", "qr", None)
+        resp = self.client.post("/borrow", data={
+            "member_id": member_id, "book_id": br2,
+            "due_date": "2099-01-01", "csrf_token": self._csrf("/borrow")})
+        self.assertEqual(resp.status_code, 302)
+        resp = self.client.post(f"/books/{br3}/retire",
+                                data={"csrf_token": self._csrf("/books")})
+        self.assertEqual(resp.status_code, 302)
+
+        resp = self._bulk("/books/bulk",
+                          {"action": "retire", "ids": [br1, br2, br3]})
+        self.assertEqual(resp.status_code, 200)
+        out = resp.get_json()
+        self.assertEqual(out["status"], "ok")
+        self.assertEqual(out["changed"], 1)       # only BR-001 was ว่าง
+        self.assertEqual(out["skipped"], 2)
+        rows = {r[0]: r[1] for r in harness.query(
+            _env.db_path,
+            "SELECT id, status FROM books WHERE id IN (?, ?, ?)",
+            (br1, br2, br3))}
+        self.assertEqual(rows[br1], "หยุดให้บริการ")
+        self.assertEqual(rows[br2], "ยืมแล้ว")     # untouched
+        self.assertEqual(rows[br3], "หยุดให้บริการ")
+
+        resp = self._bulk("/books/bulk",
+                          {"action": "restore", "ids": [br1, br2, br3]})
+        self.assertEqual(resp.status_code, 200)
+        out = resp.get_json()
+        self.assertEqual(out["changed"], 2)       # BR-001 + BR-003 were retired
+        self.assertEqual(out["skipped"], 1)       # BR-002 is borrowed, untouched
+        rows = {r[0]: r[1] for r in harness.query(
+            _env.db_path,
+            "SELECT id, status FROM books WHERE id IN (?, ?, ?)",
+            (br1, br2, br3))}
+        self.assertEqual(rows[br1], "ว่าง")
+        self.assertEqual(rows[br3], "ว่าง")
+
+    def test_books_bulk_unknown_action_is_400(self):
+        resp = self._bulk("/books/bulk", {"action": "แก้สถานะลอยๆ", "ids": [1]})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("retire/restore/delete",
+                      resp.get_json()["message"])
+        resp = self._bulk("/members/bulk", {"action": "retire", "ids": [1]})
+        self.assertEqual(resp.status_code, 400)
+        self.assertIn("'delete'", resp.get_json()["message"])
+
+    def test_members_bulk_delete(self):
+        from db.repositories.member_repo import MemberRepository
+        from db.repositories.book_repo import BookRepository
+        keep = MemberRepository().add(
+            "สมาชิกลบกลุ่ม (มีประวัติ)", "ม.4/4", "97003",
+            "2026-01-01", "2027-01-01", "qr", None)
+        drop = MemberRepository().add(
+            "สมาชิกลบกลุ่ม (ใหม่)", "ม.4/4", "97004",
+            "2026-01-01", "2027-01-01", "qr", None)
+        book_id = BookRepository().add("BMD-001", "หนังสือลบกลุ่ม")
+        resp = self.client.post("/borrow", data={
+            "member_id": keep, "book_id": book_id,
+            "due_date": "2099-01-01", "csrf_token": self._csrf("/borrow")})
+        self.assertEqual(resp.status_code, 302)
+        resp = self._bulk("/members/bulk",
+                          {"action": "delete", "ids": [keep, drop]})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(resp.get_json(),
+                         {"status": "ok", "deleted": 1, "skipped": 1})
+        self.assertEqual(len(harness.query(
+            _env.db_path, "SELECT 1 FROM members WHERE id=?", (keep,))), 1)
+        self.assertEqual(len(harness.query(
+            _env.db_path, "SELECT 1 FROM members WHERE id=?", (drop,))), 0)
 
 
 if __name__ == "__main__":
