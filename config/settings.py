@@ -12,6 +12,12 @@ DEFAULTS = {
     "school_name": "DSNPRU",
     "school_logo_path": "assets/logos/school_logo.png",
     "webui_host": "127.0.0.1",  # loopback by default; set to 0.0.0.0 for LAN (with HTTPS)
+
+    # member portal (rotating QR identity + status-only login)
+    "member_portal_enabled": True,     # off = /member/* pages 404 for everyone
+    "member_qr_rotation_hours": 12,    # each QR window lasts this many hours
+    "member_qr_grace_steps": 1,        # accepted window drift (current ± grace)
+    "accept_static_card_qr": True,     # printed cards keep working until off'd
 }
 
 _settings = dict(DEFAULTS)

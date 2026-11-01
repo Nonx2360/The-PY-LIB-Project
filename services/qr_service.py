@@ -2,6 +2,7 @@
 import qrcode
 from core.security import encrypt_qr_data, decrypt_qr_data
 
+
 class QRService:
     @staticmethod
     def generate_qr(data: str, save_path: str):

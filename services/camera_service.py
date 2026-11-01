@@ -2,7 +2,8 @@
 import cv2
 import numpy as np
 from pyzbar.pyzbar import decode
-from services.qr_service import QRService
+
+from services import member_identity
 
 class CameraService:
     @staticmethod
@@ -43,7 +44,10 @@ class CameraService:
 
             try:
                 raw_data = obj.data.decode('utf-8')
-                decoded_str = QRService.decode_qr(raw_data)
+                # decode_any covers v3 rotating tickets as well as the
+                # static card envelopes; the view then resolves the member
+                # through services.member_identity (same policy as the web)
+                decoded_str = member_identity.decode_any(raw_data)
                 break # Only process one QR code per frame
             except Exception:
                 pass

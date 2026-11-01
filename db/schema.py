@@ -6,6 +6,10 @@
 #   version 2 = adds data-integrity constraints (see MIGRATION notes below)
 #   version 3 = bulk-import era indexes on borrow_log (book_id/member_id) —
 #               books-page history counts + lists survive 1000+ row catalogs
+#   version 4 = member portal era: members.pin_hash (bcrypt, NULL until the
+#               member activates via their card or an admin-issued one-time
+#               code) + member_activation_codes (hashed one-time codes so
+#               the plaintext is never at rest) + supporting indexes.
 #   Fresh DBs are created directly in the current layout.
 # Any new schema change = bump SCHEMA_VERSION + add a migration step here.
 #
@@ -24,7 +28,7 @@ from datetime import datetime
 
 from config.constants import DB_PATH
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 _CREDS_FILE = "INITIAL_ADMIN_PASSWORD.txt"
 _KNOWN_DEFAULT_PASSWORD = "admin123"
@@ -72,7 +76,8 @@ def _create_final_schema(conn):
             register_date TEXT,
             expire_date TEXT,
             qrcode_data TEXT,
-            qrcode_path TEXT)''')
+            qrcode_path TEXT,
+            pin_hash TEXT)''')
     conn.execute(_BOOKS)
     conn.execute(_BORROW_LOG)
     conn.execute('''CREATE TABLE IF NOT EXISTS access_log (
@@ -81,7 +86,17 @@ def _create_final_schema(conn):
             access_time DATETIME,
             action TEXT,
             FOREIGN KEY (member_id) REFERENCES members (id))''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS member_activation_codes (
+            id INTEGER PRIMARY KEY,
+            member_id INTEGER NOT NULL,
+            code_hash TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            FOREIGN KEY (member_id) REFERENCES members (id))''')
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_books_code ON books(code)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_member "
+                 "ON member_activation_codes(member_id)")
     _create_bulk_indexes(conn)
 
 
@@ -207,6 +222,35 @@ def _migrate_v3(conn, log):
         raise
 
 
+def _migrate_v4(conn, log):
+    """v3 -> v4: member portal era (rotating QR identity + member login).
+
+    * members.pin_hash — bcrypt hash of the member's PIN; NULL means the
+      member has not activated their portal login yet (activation requires
+      presenting the physical card or an admin-issued one-time code).
+    * member_activation_codes — one-time activation codes issued by the
+      admin from the members page; only the SHA-256 hash is stored so the
+      plaintext code is never at rest.
+    Idempotent: column/table existence is checked before altering.
+    """
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(members)").fetchall()]
+    if "pin_hash" not in cols:
+        conn.execute("ALTER TABLE members ADD COLUMN pin_hash TEXT")
+    conn.execute('''CREATE TABLE IF NOT EXISTS member_activation_codes (
+            id INTEGER PRIMARY KEY,
+            member_id INTEGER NOT NULL,
+            code_hash TEXT NOT NULL UNIQUE,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            used_at TEXT,
+            FOREIGN KEY (member_id) REFERENCES members (id))''')
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_member "
+                 "ON member_activation_codes(member_id)")
+    if log:
+        log("db: migrated schema v3 -> v4 (member portal: pin_hash + "
+            "activation codes)")
+
+
 def _apply_migrations(conn, log=None):
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version >= SCHEMA_VERSION:
@@ -231,9 +275,16 @@ def _apply_migrations(conn, log=None):
     if version == 2:
         _migrate_v3(conn, log)
         version = 3
+        conn.execute("PRAGMA user_version = 3")
+        if log:
+            log("db: migrated schema v2 -> v3 (bulk-import indexes)")
+    if version == 3:
+        _migrate_v4(conn, log)
+        version = 4
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         if log:
-            log(f"db: migrated schema v2 -> v{SCHEMA_VERSION} (bulk-import indexes)")
+            log(f"db: migrated schema v3 -> v{SCHEMA_VERSION} (member portal: "
+                "pin_hash + activation codes)")
     # future versions land here
 
 

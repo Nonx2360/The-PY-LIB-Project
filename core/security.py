@@ -15,6 +15,8 @@
 # with SECRET_SALT, both loaded from .env via config.env_store. Never
 # hardcoded — a fresh install generates strong random values on first boot.
 import base64
+import binascii
+import json
 import os
 
 import bcrypt
@@ -132,11 +134,126 @@ def _decrypt_legacy_cbc_strict(payload: str) -> str:
         ) from exc
 
 
+# ------------------------- rotating ticket (v3) -------------------------
+# A member's identity credential that expires on its own: the payload seals
+# only {"m": member_id, "e": epoch}, where epoch = floor(unix_time /
+# rotation_seconds). The scanner accepts the current epoch plus `grace`
+# neighbours, so a photographed/s stolen QR is worthless after that window —
+# unlike the static v2 card QR, which never changes.
+# Stateless by design: nothing is written to the database when a ticket is
+# issued or verified — the "rotation" is pure time math shared by the web
+# app (which renders the member portal QR) and the desktop scanner.
+
+TICKET_PREFIX = "v3:"
+TICKET_AAD = b"pylib-member-ticket-v3"
+_TICKET_JSON_KEYS = {"m", "e"}
+
+
+def ticket_epoch(rotation_hours: int, now=None) -> int:
+    """Current window index for the given rotation period.
+
+    `rotation_hours` is the admin-configured member_qr_rotation_hours
+    (clamped by callers); epochs from different periods are not comparable,
+    so changing the period simply invalidates QRs issued before the change
+    fell out of the ±grace window.
+    """
+    from datetime import datetime, timezone
+    if now is None:
+        now = datetime.now()
+    seconds = max(1, int(round(rotation_hours))) * 3600
+    return int(now.timestamp() // seconds)
+
+
+def ticket_epoch_seconds_left(rotation_hours: int, now=None) -> int:
+    """Whole seconds until the current window flips to the next one."""
+    from datetime import datetime
+    if now is None:
+        now = datetime.now()
+    seconds = max(1, int(round(rotation_hours))) * 3600
+    return seconds - (int(now.timestamp()) % seconds)
+
+
+def ticket_window_ok(epoch: int, rotation_hours: int, grace: int = 1,
+                     now=None) -> bool:
+    """True when an epoch belongs to the accepted range around now.
+
+    grace covers clock drift between the machine that issued the QR
+    (member page, desktop login page) and the machine that scans it. The
+    ± range means a member can also present the "next" QR slightly early —
+    harmless because it is still anchored to their own id.
+    """
+    return abs(int(epoch) - ticket_epoch(rotation_hours, now)) <= max(0, int(grace))
+
+
+def encrypt_member_ticket(member_id: int, rotation_hours: int, epoch=None,
+                          *, key=None) -> str:
+    """Seal a v3 ticket for one member + one window (v3: prefix, GCM+AAD)."""
+    if key is None:
+        key = _AES_KEY
+    if int(member_id) < 1:
+        raise ValueError("ticket needs a real member id")
+    if epoch is None:
+        epoch = ticket_epoch(rotation_hours)
+    plain = json.dumps({"m": int(member_id), "e": int(epoch)},
+                       sort_keys=True, separators=(",", ":"))
+    nonce = os.urandom(GCM_NONCE_LEN)
+    sealed = AESGCM(key).encrypt(nonce, plain.encode("utf-8"), TICKET_AAD)
+    return TICKET_PREFIX + base64.urlsafe_b64encode(
+        nonce + sealed).decode("ascii")
+
+
+def parse_ticket_json(text):
+    """Validate an ALREADY-DECRYPTED ticket body: returns (member_id, epoch).
+
+    Strict: exact keyset {m, e}, integers only (bools rejected), sane
+    ranges. This exists so the desktop camera flow — which performs the
+    AES-GCM decrypt with the .env key inside its frame loop — can re-run
+    the same field validation without accepting unsealed JSON anywhere an
+    attacker-supplied payload goes.
+    """
+    try:
+        data = json.loads(text)
+        if (not isinstance(data, dict) or set(data.keys()) != _TICKET_JSON_KEYS
+                or isinstance(data["m"], bool) or isinstance(data["e"], bool)
+                or not isinstance(data["m"], int)
+                or not isinstance(data["e"], int)):
+            raise ValueError("ticket body is not {m, e} integers")
+        if data["m"] < 1 or data["e"] < 0:
+            raise ValueError("ticket fields out of range")
+        return data["m"], data["e"]
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise ValueError(
+            "member ticket rejected: wrong key, tampered data, or "
+            "unsupported format") from exc
+
+
+def decrypt_member_ticket(payload: str, *, key=None):
+    """Open a v3 ticket; returns (member_id, epoch). Raises ValueError."""
+    if key is None:
+        key = _AES_KEY
+    if not payload.startswith(TICKET_PREFIX):
+        raise ValueError("not a v3 ticket")
+    try:
+        raw = base64.urlsafe_b64decode(
+            payload[len(TICKET_PREFIX):].encode("ascii"))
+        nonce, sealed = raw[:GCM_NONCE_LEN], raw[GCM_NONCE_LEN:]
+        if len(nonce) != GCM_NONCE_LEN or len(sealed) < GCM_TAG_LEN:
+            raise ValueError("ticket truncated")
+        plain = AESGCM(key).decrypt(nonce, sealed, TICKET_AAD)
+        return parse_ticket_json(plain.decode("utf-8"))
+    except (InvalidTag, UnicodeDecodeError, ValueError, IndexError,
+            binascii.Error) as exc:
+        raise ValueError(
+            "member ticket rejected: wrong key, tampered data, or "
+            "unsupported format") from exc
+
+
 # ------------------------- public API -------------------------
 
 def encrypt_qr_data(plain_text: str) -> str:
     """Encrypt member data for a QR code (v2 AEAD envelope, working key)."""
     return encrypt_with_key(_AES_KEY, plain_text)
+
 
 
 def decrypt_qr_data(payload: str) -> str:

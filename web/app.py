@@ -2,12 +2,14 @@
 import io
 import os
 import sys
+import time
+from collections import deque
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from flask import (Flask, render_template, request, redirect, url_for,
-                   jsonify, session, flash, send_file)
+                   jsonify, session, flash, send_file, abort)
 from config import settings
 from config.constants import (BOOK_STATUS_AVAILABLE, BOOK_STATUS_BORROWED,
                               BOOK_STATUS_RETIRED)
@@ -23,7 +25,9 @@ from services.excel_service import MAX_ROWS as IMPORT_MAX_ROWS
 from services.qr_service import QRService
 from services.pdf_service import PDFService
 from core.logger import logger
+from core import security
 from core import throttle
+from services import member_identity
 
 from web import csrf as csrf_mod
 from web.csrf import csrf_field_markup
@@ -42,6 +46,10 @@ LIMITS = {
     "member_name": 120, "member_grade": 40, "member_number": 20,
     "book_code": 40, "book_title": 200, "school_name": 80, "logo_path": 260,
 }
+
+# Member portal constants
+MEMBER_ACTIVATION_TTL_SECONDS = 10 * 60    # card/code → PIN-choice window
+MEMBER_PIN_MIN, MEMBER_PIN_MAX = 6, 64     # 6+ keeps trivial pads out
 
 def _clean(value, limit):
     text = "".join(c for c in (value or "") if ord(c) >= 32)
@@ -99,6 +107,90 @@ def create_app():
             return f(*args, **kwargs)
         return decorated
 
+    def _member_portal_enabled():
+        """The Settings switch can 404 the whole /member/* page family."""
+        return bool(settings.get("member_portal_enabled"))
+
+    def member_required(f):
+        """Gate for the member's own status-only portal session.
+
+        Authorization is symmetric with the admin side: a member session
+        carries no admin rights (the `logged_in` key it simply lacks), so
+        member pages and admin pages are disjoint. Members never see, and
+        never POST to, anything that changes library state.
+        """
+        @wraps(f)
+        def decorated(*args, **kwargs):
+            if not _member_portal_enabled():
+                abort(404)
+            if not session.get("member_id"):
+                return redirect(url_for("member_login"))
+            return f(*args, **kwargs)
+        return decorated
+
+    def _member_from_session():
+        """The logged-in member's row, or None (row deleted → treat as off)."""
+        mid = session.get("member_id")
+        if not mid:
+            return None
+        return member_repo.fetchone(
+            "SELECT id, name, grade, number, expire_date "
+            "FROM members WHERE id = ?", (mid,))
+
+    def _activation_member_fresh():
+        """Active mid-activation member id, or None if the window elapsed.
+
+        The activation window (10 min) bounds the time a half-open
+        session exists between card/code verification and PIN choice.
+        """
+        mid = session.get("activation_member_id")
+        at = session.get("activation_at")
+        if not mid or not at:
+            return None
+        if time.time() - float(at) > MEMBER_ACTIVATION_TTL_SECONDS:
+            session.pop("activation_member_id", None)
+            session.pop("activation_at", None)
+            return None
+        return mid
+
+    def _drop_activation_session():
+        session.pop("activation_member_id", None)
+        session.pop("activation_at", None)
+
+    # ---- /member/qr.png rate limiting (per member session; ids only) ----
+    QR_RATE_LIMIT = 30        # images per window, generous for a human page
+    QR_RATE_WINDOW = 60.0     # seconds
+    _qr_rate = {}             # member_id -> deque of request timestamps
+
+    def _qr_rate_ok(mid):
+        now = time.time()
+        dq = _qr_rate.get(mid)
+        if dq is None:
+            dq = _qr_rate[mid] = deque()
+        while dq and now - dq[0] > QR_RATE_WINDOW:
+            dq.popleft()
+        if len(dq) >= QR_RATE_LIMIT:
+            return False
+        dq.append(now)
+        if len(_qr_rate) > 4096:      # bound the table; empties first
+            for stale in [k for k, v in _qr_rate.items() if not v][:100]:
+                _qr_rate.pop(stale, None)
+        return True
+
+    def _qr_png(payload):
+        """Render a ticket payload as PNG bytes, no filesystem touch."""
+        import qrcode
+        img = qrcode.QRCode(
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=8, border=2)
+        img.add_data(payload)
+        img.make(fit=True)
+        out = io.BytesIO()
+        img.make_image(fill_color="black", back_color="white").save(
+            out, format="PNG")
+        out.seek(0)
+        return out
+
     @app.context_processor
     def _inject_csrf():
         try:
@@ -109,16 +201,53 @@ def create_app():
         except RuntimeError:  # outside request context
             return {"csrf_token": "", "csrf_field": Markup("")}
 
+    # member endpoints grouped by their session state at POST time
+    _MEMBER_PUBLIC_POSTS = {
+        # no member session yet: first login + first activation steps
+        "member_login", "member_activate_scan",
+        "member_activate_code", "member_activate_setpin",
+    }
+    _MEMBER_SESSION_POSTS = {"member_logout"}
+
     @app.before_request
     def _csrf_protect():
-        """Reject state-changing POSTs without a valid session CSRF token."""
+        """Reject state-changing POSTs without a valid session CSRF token.
+
+        Zones, checked in order:
+        * `login` (admin) — rendered without login_required; token required;
+        * member public endpoints — token required, bounce to the member
+          page that rendered the form (portal may be off → 404 anyway);
+        * member-session endpoints (portal/logout) — a logged-in member's
+          POSTs use the same token, but bounce inside the portal;
+        * everything else — admin area: requires BOTH an admin session and
+          the token, so a member-only session can never pass here.
+        """
         if request.method != "POST":
             return None
-        if request.endpoint == "login":
+        endpoint = request.endpoint
+        if endpoint == "login":
             # login is rendered without login_required; session token still required
             if not csrf_mod.validate(session, request.form):
                 flash("ระดับเซสชันไม่ถูกต้อง กรุณาลองอีกครั้ง", "error")
                 return redirect(url_for("login"))
+            return None
+        if endpoint in _MEMBER_PUBLIC_POSTS:
+            if not csrf_mod.validate(session, request.form):
+                logger.warning("csrf: rejected member POST %s", request.path)
+                flash("หมดเวลาการทำรายการ กรุณาลองอีกครั้ง", "error")
+                back = "member_activate" if endpoint != "member_login" \
+                    else "member_login"
+                return redirect(url_for(back))
+            return None
+        if endpoint in _MEMBER_SESSION_POSTS and not session.get("logged_in"):
+            # member-only session (an admin account posting member_logout is
+            # still inside the admin zone below and passes the same check)
+            token = (request.form.get("csrf_token")
+                     or request.headers.get("X-CSRF-Token", ""))
+            if not csrf_mod.validate(session, token):
+                logger.warning("csrf: rejected member POST %s", request.path)
+                flash("หมดเวลาการทำรายการ กรุณาลองอีกครั้ง", "error")
+                return redirect(url_for("member_portal"))
             return None
         if not session.get("logged_in"):
             return redirect(url_for("login"))
@@ -251,6 +380,239 @@ def create_app():
         session.clear()
         return redirect(url_for("login"))
 
+    # ── Member portal (rotating QR identity, status-only) ──
+    #
+    # Members log in with (ชั้น + เลขที่) + their own PIN and see exactly
+    # their loans/due dates/recent returns/access history, plus a live QR
+    # that re-issues itself every member_qr_rotation_hours (v3 ticket).
+    # Nothing here changes library state — borrow/return/delete remain
+    # admin-side on web AND desktop.
+
+    @app.route("/member/login", methods=["GET", "POST"])
+    def member_login():
+        if not _member_portal_enabled():
+            abort(404)
+        if request.method == "GET" and _member_from_session():
+            return redirect(url_for("member_portal"))
+        if request.method == "POST":
+            grade = _clean(request.form.get("grade"), LIMITS["member_grade"])
+            number = _clean(request.form.get("number"), LIMITS["member_number"])
+            pin = (request.form.get("pin") or "").strip()
+            # throttle key ties the lock to the attempted badge, so a
+            # stalker guessing one badge can't freeze others and vice versa
+            ip = request.remote_addr or "-local-"
+            key = (ip, f"member:{grade}:{number}")
+            if throttle.is_locked(key):
+                minutes = throttle.lock_remaining_minutes(key)
+                logger.warning("web member login: throttled "
+                               "(locked %ss remaining)",
+                               throttle.lock_remaining_seconds(key))
+                flash("รหัส PIN ไม่ถูกต้อง "
+                      f"(ลองใหม่ได้ในอีก ~{minutes} นาที)", "error")
+                return render_template("member_login.html"), 429
+            row = None
+            if grade and number and pin and len(pin) < 200:
+                row = member_repo.get_by_badge_for_login(grade, number)
+            ok = bool(row and row[1]
+                      and member_repo.verify_member_pin(row[0], pin))
+            if ok:
+                throttle.record_success(key)
+                session["member_id"] = row[0]
+                _drop_activation_session()
+                logger.info("web member login: successful")  # no badge/PII in logs
+                return redirect(url_for("member_portal"))
+            throttle.record_failure(key)
+            logger.warning("web member login: failed attempt")
+            flash("ชั้น เลขที่ หรือรหัส PIN ไม่ถูกต้อง", "error")
+        return render_template("member_login.html")
+
+    @app.route("/member/logout", methods=["POST"])
+    @member_required
+    def member_logout():
+        session.pop("member_id", None)
+        _drop_activation_session()
+        return redirect(url_for("member_login"))
+
+    @app.route("/member")
+    @member_required
+    def member_portal():
+        row = _member_from_session()
+        if not row:
+            # member deleted since login — drop the dangling session
+            session.pop("member_id", None)
+            flash("ไม่พบสมาชิกนี้ในระบบ กรุณาเข้าสู่ระบบอีกครั้ง", "error")
+            return redirect(url_for("member_login"))
+        mid, name, grade, number, expire_date = row
+        today = datetime.now().strftime("%Y-%m-%d")
+        loans = member_repo.fetchall(
+            "SELECT bo.title, bo.code, bl.borrow_date, bl.return_due "
+            "FROM borrow_log bl JOIN books bo ON bo.id = bl.book_id "
+            "WHERE bl.member_id = ? AND bl.returned = 0 "
+            "ORDER BY bl.return_due ASC", (mid,))
+        recent_returns = member_repo.fetchall(
+            "SELECT bo.title, bo.code, bl.borrow_date, bl.return_due "
+            "FROM borrow_log bl JOIN books bo ON bo.id = bl.book_id "
+            "WHERE bl.member_id = ? AND bl.returned = 1 "
+            "ORDER BY bl.id DESC LIMIT 10", (mid,))
+        access_history = member_repo.fetchall(
+            "SELECT access_time, action FROM access_log "
+            "WHERE member_id = ? ORDER BY id DESC LIMIT 10", (mid,))
+        hours = member_identity.rotation_hours()
+        grace = member_identity.grace_steps()
+        seconds_left = security.ticket_epoch_seconds_left(hours)
+        expired = bool(expire_date and expire_date < today)
+        return render_template(
+            "member_portal.html",
+            member_name=name, member_grade=grade, member_number=number,
+            expire_date=expire_date, member_expired=expired, today=today,
+            loans=loans, recent_returns=recent_returns,
+            access_history=access_history,
+            qr_seconds=seconds_left, qr_rotation_hours=hours, qr_grace=grace,
+        )
+
+    @app.route("/member/qr.png")
+    @member_required
+    def member_qr():
+        row = _member_from_session()
+        if not row:
+            session.pop("member_id", None)
+            return jsonify(ok=False, error="session"), 401
+        if not _qr_rate_ok(row[0]):
+            logger.info("web member qr: rate limited (id kept out of logs)")
+            return jsonify(ok=False, error="too_fast"), 429
+        hours = member_identity.rotation_hours()
+        # ?next=1 renders the NEXT window: the portal shows it as the
+        # reserve QR so a desk scan never dead-ends mid-flip
+        epoch = security.ticket_epoch(hours) + (
+            1 if request.args.get("next") == "1" else 0)
+        payload = security.encrypt_member_ticket(row[0], hours, epoch=epoch)
+        resp = send_file(_qr_png(payload), mimetype="image/png",
+                         download_name="member-qr.png", conditional=False)
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        return resp
+
+    # ---- first-time activation (card QR at the desk or admin code) ----
+
+    @app.route("/member/activate")
+    def member_activate():
+        if not _member_portal_enabled():
+            abort(404)
+        if _member_from_session():
+            return redirect(url_for("member_portal"))
+        mid = _activation_member_fresh()
+        member_label = None
+        if mid:
+            row = member_repo.fetchone(
+                "SELECT name, grade, number FROM members WHERE id = ?",
+                (mid,))
+            member_label = f"{row[0]} · {row[1]} · {row[2]}" if row else None
+        return render_template("member_activate.html",
+                               activation_member=mid and member_label)
+
+    @app.route("/member/activate/scan", methods=["POST"])
+    def member_activate_scan():
+        if not _member_portal_enabled():
+            abort(404)
+        if _member_from_session():
+            return redirect(url_for("member_portal"))
+        payload = _clean(request.form.get("payload"), 800)
+        try:
+            ident = member_identity.resolve_scanned(payload)
+        except member_identity.MemberIdentityError as exc:
+            # the Thai message is the outcome — no payload ever echoes back
+            logger.info("web activation: scan rejected")
+            flash(str(exc), "error")
+            return redirect(url_for("member_activate"))
+        except Exception:
+            logger.info("web activation: scan decode error")
+            flash("QR ไม่ถูกต้อง กรุณาลองใหม่", "error")
+            return redirect(url_for("member_activate"))
+        if ident.get("kind") != "static":
+            # a v3 ticket here proves nothing useful — whoever has it
+            # already has a working login; first activation needs the
+            # physical card or an admin-issued code
+            logger.info("web activation: non-card token rejected")
+            flash("เปิดใช้งานครั้งแรกต้องใช้ QR จากบัตรประจำตัว หรือรหัสที่ผู้ดูแลออกให้",
+                  "error")
+            return redirect(url_for("member_activate"))
+        mid = ident["member_id"]
+        if member_repo.pin_state(mid) == "set":
+            # takeover guard: an activated member cannot be re-activated,
+            # not even by presenting the original card
+            logger.info("web activation: refused, member already has pin id=%s", mid)
+            flash("สมาชิกนี้เปิดใช้งานหน้าของตนเองอยู่แล้ว — "
+                  "กรุณาเข้าสู่ระบบด้วยรหัส PIN", "error")
+            return redirect(url_for("member_login"))
+        session["activation_member_id"] = mid
+        session["activation_at"] = time.time()
+        logger.info("web activation: card verified id=%s", mid)
+        return redirect(url_for("member_activate"))
+
+    @app.route("/member/activate/code", methods=["POST"])
+    def member_activate_code():
+        if not _member_portal_enabled():
+            abort(404)
+        if _member_from_session():
+            return redirect(url_for("member_portal"))
+        code = (request.form.get("code") or "").strip()[:80]
+        mid = member_repo.find_activation_member(code) if code else None
+        if not mid:
+            logger.info("web activation: code rejected")
+            flash("รหัสเปิดใช้งานไม่ถูกต้องหรือหมดอายุ กรุณาติดต่อผู้ดูแล",
+                  "error")
+            return redirect(url_for("member_activate"))
+        if member_repo.pin_state(mid) == "set":
+            logger.info("web activation: refused, already active id=%s", mid)
+            flash("สมาชิกนี้เปิดใช้งานหน้าของตนเองอยู่แล้ว — "
+                  "กรุณาเข้าสู่ระบบด้วยรหัส PIN", "error")
+            return redirect(url_for("member_login"))
+        # claim the code NOW: the 12-char plaintext never rides in the
+        # session cookie, and double-entry burns it for everyone (fine —
+        # the activation guard still protects the account itself)
+        member_repo.claim_activation_code(code, mid)
+        session["activation_member_id"] = mid
+        session["activation_at"] = time.time()
+        logger.info("web activation: code accepted id=%s", mid)
+        return redirect(url_for("member_activate"))
+
+    @app.route("/member/activate/set-pin", methods=["POST"])
+    def member_activate_setpin():
+        if not _member_portal_enabled():
+            abort(404)
+        if _member_from_session():
+            return redirect(url_for("member_portal"))
+        mid = _activation_member_fresh()
+        if not mid:
+            flash("หมดเวลาเปิดใช้งาน กรุณาเริ่มขั้นตอนใหม่", "error")
+            return redirect(url_for("member_activate"))
+        pin1 = request.form.get("pin1") or ""
+        pin2 = request.form.get("pin2") or ""
+        if pin1 != pin2:
+            flash("รหัส PIN สองช่องไม่ตรงกัน", "error")
+            return redirect(url_for("member_activate"))
+        pin = pin1.strip()
+        if (not MEMBER_PIN_MIN <= len(pin) <= MEMBER_PIN_MAX
+                or any(ord(c) < 32 for c in pin)):
+            flash(f"รหัส PIN ต้องมีความยาว {MEMBER_PIN_MIN}–"
+                  f"{MEMBER_PIN_MAX} ตัวอักษร", "error")
+            return redirect(url_for("member_activate"))
+        if member_repo.pin_state(mid) == "set":
+            logger.info("web activation: refused, already active id=%s", mid)
+            flash("สมาชิกนี้เปิดใช้งานหน้าของตนเองอยู่แล้ว — "
+                  "กรุณาเข้าสู่ระบบด้วยรหัส PIN", "error")
+            return redirect(url_for("member_login"))
+        if not member_repo.activate_with_pin(mid, pin):
+            _drop_activation_session()
+            logger.info("web activation: atomic activation refused id=%s", mid)
+            flash("เปิดใช้งานไม่สำเร็จ กรุณาเริ่มขั้นตอนใหม่", "error")
+            return redirect(url_for("member_activate"))
+        session["member_id"] = mid
+        _drop_activation_session()
+        logger.info("web activation: pin set id=%s", mid)
+        flash("เปิดใช้งานสำเร็จ ยินดีต้อนรับเข้าสู่หน้าของคุณ", "success")
+        return redirect(url_for("member_portal"))
+
     # ── Dashboard ─────────────────────────────────────────
     @app.route("/")
     @login_required
@@ -276,7 +638,13 @@ def create_app():
     @app.route("/api/members")
     @login_required
     def api_members():
-        """DataTables server-side feed for the members table."""
+        """DataTables server-side feed for the members table.
+
+        The extra `pin_set` column tells the UI whether the member has
+        activated their portal login (has a stored bcrypt PIN) — it adjusts
+        the row actions (issue activation code vs clear PIN). The hash
+        itself is never selected.
+        """
         dt = _dt_args()
         base = "members"
         where, params = "", ()
@@ -284,13 +652,15 @@ def create_app():
             like = f"%{dt['q']}%"
             where = "name LIKE ? OR grade LIKE ? OR number LIKE ?"
             params = (like, like, like)
+        pin_expr = "(CASE WHEN pin_hash IS NULL THEN 0 ELSE 1 END)"
         return _dt_response(
             dt, member_repo, base, where, params,
             "SELECT id, name, grade, number, register_date, expire_date, "
-            "qrcode_path FROM members",
+            f"qrcode_path, {pin_expr} FROM members",
             [("id", "id"), ("name", "name"), ("grade", "grade"),
              ("number", "number"), ("register_date", "register_date"),
-             ("expire_date", "expire_date"), ("qrcode_path", "qrcode_path")],
+             ("expire_date", "expire_date"), ("qrcode_path", "qrcode_path"),
+             (pin_expr, "pin_set")],
         )
 
     @app.route("/members/bulk", methods=["POST"])
@@ -376,6 +746,57 @@ def create_app():
                 pass
         logger.info("Web: member deleted: id=%s", mid)
         flash("ลบสมาชิกสำเร็จ", "success")
+        return redirect(url_for("members"))
+
+    @app.route("/members/<int:mid>/activation-code", methods=["POST"])
+    @login_required
+    def member_issue_code(mid):
+        """Mint a one-time portal activation code for THIS member.
+
+        Only offered while the member has no portal PIN yet — an issued
+        code always means 'set a NEW pin', so it must not exist for an
+        account that is already active. The plaintext is returned exactly
+        once: rendered in the page flash for a classic form POST, or as
+        {ok, code} JSON for the members-table row button (which must
+        surface it in a dialog, then it exists nowhere else). Only the
+        SHA-256 hash reaches the database, and it is never logged.
+        """
+        issued = None
+        if member_repo.pin_state(mid) != "set":
+            issued = member_repo.issue_activation_code(mid)
+            logger.info("Web: member activation code issued: id=%s", mid)
+        # the table engine POSTs header-only CSRF; a browser form posts the
+        # token as a field — use that to pick the response shape
+        as_json = bool(request.headers.get("X-CSRF-Token")) \
+            and not request.form.get("csrf_token")
+        if as_json:
+            if issued is None:
+                return jsonify(ok=False, message=
+                               "สมาชิกนี้เปิดใช้งานหน้าของตนเองอยู่แล้ว "
+                               "— หากต้องการรีเซ็ต ให้ล้างรหัสก่อน")
+            return jsonify(ok=True, code=issued)
+        if issued is None:
+            flash("สมาชิกเปิดใช้งานหน้าของตนเองอยู่แล้ว — "
+                  "หากต้องการรีเซ็ต ให้กดปุ่ม ล้างรหัส ก่อน", "error")
+            return redirect(url_for("members"))
+        flash(f"รหัสเปิดใช้งานสำหรับสมาชิกรหัสที่ {mid}: {issued} "
+              "(ใช้ได้ครั้งเดียว ภายใน 15 นาที — สำเนาของรหัสจะไม่แสดงอีก)",
+              "success")
+        return redirect(url_for("members"))
+
+    @app.route("/members/<int:mid>/reset-pin", methods=["POST"])
+    @login_required
+    def member_reset_pin(mid):
+        """Clear a member's portal PIN (forces re-activation).
+
+        Outstanding activation codes die with the reset (repo handles
+        this), so a leaked code can't resurrect the account silently.
+        """
+        member_repo.clear_pin(mid)
+        logger.info("Web: member portal pin cleared: id=%s", mid)
+        flash("ล้างรหัสผ่านหน้า (portal) สมาชิกเรียบร้อย — "
+              "สมาชิกต้องเปิดใช้งานใหม่ด้วยบัตร หรือรหัสที่ผู้ดูแลสร้างให้",
+              "success")
         return redirect(url_for("members"))
 
     # ── Books ─────────────────────────────────────────────
@@ -834,6 +1255,18 @@ def create_app():
             settings.set("member_expiry_days", _int_in(request.form.get("member_expiry_days"), 1, 3650, 365))
             settings.set("school_logo_path", _clean(request.form.get("school_logo_path"),
                                                     LIMITS["logo_path"]) or "assets/logos/school_logo.png")
+            # member portal / rotating QR identity
+            settings.set("member_portal_enabled",
+                         bool(request.form.get("member_portal_enabled")))
+            # clamps match the member_identity read-side (1..72 h, 0..2 steps)
+            settings.set("member_qr_rotation_hours",
+                         _int_in(request.form.get("member_qr_rotation_hours"),
+                                 1, 72, 12))
+            settings.set("member_qr_grace_steps",
+                         _int_in(request.form.get("member_qr_grace_steps"),
+                                 0, 2, 1))
+            settings.set("accept_static_card_qr",
+                         bool(request.form.get("accept_static_card_qr")))
             settings.save()
             flash("บันทึกการตั้งค่าสำเร็จ", "success")
             return redirect(url_for("settings_page"))
