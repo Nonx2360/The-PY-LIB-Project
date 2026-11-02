@@ -34,10 +34,36 @@ secret file to a disposable path so test runs never touch the real `.env`.
 
 ## 2. QR payload encryption
 
-Member data stored in the QR payload: `name|grade|number|register_date|expire_date`.
-Implementation: `core/security.py`. Two formats exist:
+Implementation: `core/security.py`. Three formats exist:
 
-**v2 — current (AES-256-GCM, authenticated)**
+**Member identity payloads**
+
+* Static cards (v2/v1/legacy): `name|grade|number|register_date|expire_date`.
+* Rotating tickets (v3): the payload body is just
+  `{"m": <member_id>, "e": <epoch>}` — no personal data inside the QR.
+
+**v3 — rotating member ticket (current for on-screen identities)**
+
+```
+v3: + base64url( nonce[12] || AES-256-GCM( JSON {"m":id,"e":epoch} ) || tag[16] )
+    AAD = b"pylib-member-ticket-v3"   (protocol binding — v2 bodies fail here and vice versa)
+```
+
+* `e` is the **time-window epoch**: `floor(unix_time / window_seconds)` with the
+  admin-configured window (default 12 h, clamp 1–72 h). A ticket is accepted
+  only inside its own window plus `member_qr_grace_steps` neighbours
+  (default 1, clamp 0–2) to absorb small clock skew.
+* The window math is **stateless** — nothing is persisted, so clocks and
+  machines agree without a shared store; `e` is a Unix-epoch multiple (not
+  local midnight).
+* Decoding is **strict**: the JSON body must be exactly `{"m", "e"}` with
+  positive-int values (extra keys, strings, booleans, floats → rejected;
+  `parse_ticket_json`).
+* The AAD binds the v3 envelope to the member-ticket protocol, so a v2 badge
+  can never be confused for a ticket (cross-protocol replay fails the GCM tag).
+* Payload is ~70–90 chars — stays comfortably inside quality-scannable QRs.
+
+**v2 — static card (AES-256-GCM, authenticated)**
 
 ```
 v2: + base64url( nonce[12] || ciphertext || tag[16] )
@@ -45,6 +71,14 @@ v2: + base64url( nonce[12] || ciphertext || tag[16] )
 
 * Any tampering, truncation, or wrong-key decryption is **rejected** (GCM tag).
 * All *new* member registrations produce v2 payloads.
+
+Acceptance policy (`services/member_identity.py`, shared by the web scanner and
+the desktop camera so a QR never behaves differently depending on the reader):
+
+* `accept_static_card_qr` (admin setting, default on) — when off, printed-card
+  QRs are refused in favour of rotating QRs only.
+* Expired-window tickets raise a Thai "QR หมดเวลา" outcome; unknown members
+  raise "ไม่พบสมาชิกนี้ในระบบ" — messages only, never payload content.
 
 **v1 — legacy (AES-256-CBC, unauthenticated) — supported for reading only**
 
@@ -59,7 +93,9 @@ base64url( IV[16] || AES-256-CBC ciphertext )   PKCS7 padding
 * New/rotated tooling always writes v2.
 
 **Key derivation** — `PBKDF2-HMAC-SHA256(SHA-256, 32-byte key, 100k iterations)`
-over `SECRET_PASSPHRASE` with `SECRET_SALT`.
+over `SECRET_PASSPHRASE` with `SECRET_SALT`. One key serves the badge formats
+(v1/v2) and member tickets (v3) alike; rotating it (§3) invalidates every
+in-flight ticket window as well as static cards.
 
 ## 3. QR key rotation and the rotation tool
 
@@ -121,6 +157,15 @@ Store that password; the file is for reference only.
     - `borrow_log` rebuilt with `returned INTEGER NOT NULL CHECK (returned IN (0,1))`,
       `member_id`/`book_id` `NOT NULL`, and FKs declared (legacy NULL/invalid
       `returned` values are coerced to `1` — returned);
+  * v3 adds bulk-import indexes on `borrow_log(member_id, book_id)`;
+  * v4 (member portal era) adds:
+    - `members.pin_hash` — bcrypt hash of the member's own portal PIN.
+      It starts and stays `NULL` until the member personally activates; no
+      migration ever invents credentials, and legacy members keep working
+      pin-less;
+    - `member_activation_codes` — one-time codes issued by admins, stored as
+      **SHA-256 hashes only** (15-minute expiry, `used_at` burn timestamp,
+      unique `code_hash`), with `idx_activation_member` for the reset-PIN purge;
   * Migrations are idempotent and safe to run on every boot.
 * **Foreign keys** are turned ON (`PRAGMA foreign_keys=ON`) for *every*
   connection created by the repositories (`db/repositories/base_repo.py`).
@@ -189,6 +234,40 @@ Implemented in `web/app.py`, `web/csrf.py`, `web/throttle.py`:
   actions log only ids/codes.
 * SQL injection strings in any field are ordinary data (parameterized SQL).
 
+### 8.1 Member portal (`/member…`) hardening
+
+Implemented in `web/app.py` + `db/repositories/member_repo.py`:
+
+* **Key separation:** the member session lives in a different session key
+  (`member_id`) than the admin one (`logged_in`). A member session cannot open
+  any admin route (every admin route still bounces `login_required`), and an
+  admin session does not silently inherit member pages.
+* **Member login:** grade+number+PIN against `members.pin_hash` (bcrypt).
+  Errors are generic — "something didn't match", never "no such member".
+  Throttled 5 failures / 15 min per (IP, `member:<grade>:<number>`, key kept
+  separate from the admin throttle counters).
+* **First activation is a ceremony, not a form:**
+  1. Proof of identity: scanning **one's own printed card** (the physical card
+     the school issued) or an admin-issued one-time code;
+  2. then a 10-minute, server-side activation window to set a PIN (6–64 chars).
+  Only afterwards does `pin_hash` become non-NULL.
+* **Takeover guard:** every activation path (scan, code, atomic
+  `activate_with_pin`) refuses when `pin_hash IS NOT NULL` — an admin code
+  cannot hijack an already-activated account. Admin "ล้าง PIN" clears the
+  member back to the activation ceremony and burns any outstanding codes in
+  the same transaction.
+* **One-time codes:** issued codes are stored SHA-256-hashed, expire in 15
+  minutes, are claimed atomically on first use, and are shown to the admin
+  exactly once (dialog) — the plaintext is never persisted or logged.
+* **Portal is read-only by design:** loans, due dates, return history and
+  access history of the member themself, plus their own rotating QR.
+  No borrow/return/modify endpoints exist behind the member session.
+* **Rotating QR endpoint** (`/member/qr.png`): session-bound, rate-limited
+  (30 PNGs/minute per member session), served `no-store`, generated in memory
+  (no artifact written to disk).
+* **Kill switch:** `member_portal_enabled=False` makes every `/member…` route
+  answer 404.
+
 ## 9. Deploying the web UI beyond one machine
 
 The bundled server + SQLite is designed for one site. To share on a LAN:
@@ -228,3 +307,17 @@ Answered by `tests/` (unittest):
 | Return nonexistent/mismatched record rejected | `test_borrow_atomic` |
 | Backup/restore preserves records & relationships | `test_backup_restore` |
 | Migrations enforce constraints (UNIQUE/CHECK/FK) | `test_migrations` |
+| v4 upgrade: pin_hash NULL for legacy members, activation codes table + index, idempotent | `test_migrations` |
+| Rotating ticket roundtrip; tamper/wrong-key/foreign-AAD rejected | `test_rotating_tickets` |
+| Ticket JSON strictness (extra keys / wrong types / zero ids rejected) | `test_rotating_tickets` |
+| Window math: epoch boundaries, grace ±1/±2, stale tickets refused | `test_rotating_tickets` |
+| Shared resolver: static cards acceptable/refusable, dispatch to tickets | `test_rotating_tickets` |
+| Member activation via card scan / one-time code; PIN-length rules | `test_member_portal` |
+| Activation refused after PIN set (no takeover); expired activation window | `test_member_portal` |
+| One-time code: single use, atomic claim, foreign member cannot win it | `test_member_portal` |
+| Member session cannot reach admin routes; admin session has no portal | `test_member_portal` |
+| Portal shows only the member's own loans/returns/access rows | `test_member_portal` |
+| Member QR PNG: session-bound, no-store, rate-limited (429) | `test_member_portal` |
+| Admin PIN reset locks the member out and burns leftover codes | `test_member_portal` |
+| Settings groups save independently; portal off → /member 404 | `test_member_portal` |
+| v3 ticket scan via /scan/resolve: valid 200, stale 400 expired, unknown 404 | `test_web_scan` |

@@ -1207,8 +1207,11 @@ def create_app():
     # ── Card scan (QR badge): shared by borrow/return/access pages ────────
     # The camera itself never decrypts anything: POST /scan/resolve takes the
     # QR payload text (AES-sealed) and decrypts server-side with the .env key.
-    # Each attempt costs one PBKDF2 derivation, and the route is fully wrapped
-    # by login_required + CSRF before_request — brute force is impractical.
+    # Every accepted format lives in services.member_identity — the same
+    # module the desktop scanner uses, so a QR times out identically on both
+    # sides. Each attempt costs one PBKDF2 derivation, and the route is
+    # fully wrapped by login_required + CSRF before_request — brute force
+    # is impractical.
     @app.route("/scan/resolve", methods=["POST"])
     @login_required
     def scan_resolve():
@@ -1216,31 +1219,28 @@ def create_app():
         if not payload:
             return jsonify(ok=False, error="invalid"), 400
         try:
-            decoded = QRService.decode_qr(payload)
+            ident = member_identity.resolve_scanned(payload, member_repo)
+        except member_identity.MemberIdentityError as exc:
+            # classify outcome for the desk UI without echoing any payload
+            if "QR หมดเวลา" in str(exc):
+                logger.info("web scan: ticket window expired")
+                return jsonify(ok=False, error="expired",
+                               message=str(exc)), 400
+            if "ไม่พบสมาชิก" in str(exc):
+                logger.info("web scan: no member matches this scan")
+                return jsonify(ok=False, error="not_found",
+                               message=str(exc)), 404
+            logger.info("web scan: payload rejected "
+                        "(expired key, tampered, foreign token, or policy)")
+            return jsonify(ok=False, error="invalid",
+                           message="QR ไม่ถูกต้อง บัตรเก่า หรือไฟล์โทเคนถูกเปลี่ยน"), 400
         except Exception:
-            # wrong key / tampered / not a token — outcome only, never payload
-            logger.info("web scan: decode rejected (expired key, tampered, or foreign token)")
+            logger.error("web scan: resolver crashed", exc_info=True)
             return jsonify(ok=False, error="invalid"), 400
-        parts = [p.strip() for p in decoded.split("|")]
-        if len(parts) != 5 or not parts[2]:
-            logger.info("web scan: decrypted payload is not a member badge shape")
-            return jsonify(ok=False, error="invalid"), 400
-        name, grade, number, _reg, _exp = parts
-        rows = member_repo.fetchall(
-            "SELECT id, name, grade, number, register_date, expire_date "
-            "FROM members WHERE number=?",
-            (number,))
-        if not rows:
-            logger.info("web scan: no member with that badge number")
-            return jsonify(ok=False, error="not_found"), 404
-        exact = [r for r in rows if r[1] == name and r[2] == grade]
-        row = (exact or rows)[0]
-        today = datetime.now().strftime("%Y-%m-%d")
-        member = {
-            "id": row[0], "name": row[1], "grade": row[2], "number": row[3],
-            "expire_date": row[5],
-            "expired": bool(row[5] and row[5] < today),
-        }
+        member = {"id": ident["member_id"], "name": ident["name"],
+                  "grade": ident["grade"], "number": ident["number"],
+                  "expire_date": ident["expire_date"],
+                  "expired": ident["expired"]}
         return jsonify(ok=True, member=member)
 
     # ── Settings ──────────────────────────────────────────
@@ -1248,25 +1248,30 @@ def create_app():
     @login_required
     def settings_page():
         if request.method == "POST":
-            settings.set("school_name", _clean(request.form.get("school_name"),
-                                               LIMITS["school_name"]) or "DSNPRU")
-            settings.set("default_loan_days", _int_in(request.form.get("default_loan_days"), 1, 90, 7))
-            settings.set("max_books_per_member", _int_in(request.form.get("max_books_per_member"), 1, 20, 3))
-            settings.set("member_expiry_days", _int_in(request.form.get("member_expiry_days"), 1, 3650, 365))
-            settings.set("school_logo_path", _clean(request.form.get("school_logo_path"),
-                                                    LIMITS["logo_path"]) or "assets/logos/school_logo.png")
-            # member portal / rotating QR identity
-            settings.set("member_portal_enabled",
-                         bool(request.form.get("member_portal_enabled")))
-            # clamps match the member_identity read-side (1..72 h, 0..2 steps)
-            settings.set("member_qr_rotation_hours",
-                         _int_in(request.form.get("member_qr_rotation_hours"),
-                                 1, 72, 12))
-            settings.set("member_qr_grace_steps",
-                         _int_in(request.form.get("member_qr_grace_steps"),
-                                 0, 2, 1))
-            settings.set("accept_static_card_qr",
-                         bool(request.form.get("accept_static_card_qr")))
+            # the page carries two independent forms (general + member
+            # portal); only the group that submitted is written, so
+            # checkbox-absent semantics can't wipe the untouched group
+            if request.form.get("settings_group") == "member_portal":
+                # member portal / rotating QR identity
+                settings.set("member_portal_enabled",
+                             bool(request.form.get("member_portal_enabled")))
+                # clamps match the member_identity read-side (1..72 h, 0..2)
+                settings.set("member_qr_rotation_hours",
+                             _int_in(request.form.get("member_qr_rotation_hours"),
+                                     1, 72, 12))
+                settings.set("member_qr_grace_steps",
+                             _int_in(request.form.get("member_qr_grace_steps"),
+                                     0, 2, 1))
+                settings.set("accept_static_card_qr",
+                             bool(request.form.get("accept_static_card_qr")))
+            else:
+                settings.set("school_name", _clean(request.form.get("school_name"),
+                                                   LIMITS["school_name"]) or "DSNPRU")
+                settings.set("default_loan_days", _int_in(request.form.get("default_loan_days"), 1, 90, 7))
+                settings.set("max_books_per_member", _int_in(request.form.get("max_books_per_member"), 1, 20, 3))
+                settings.set("member_expiry_days", _int_in(request.form.get("member_expiry_days"), 1, 3650, 365))
+                settings.set("school_logo_path", _clean(request.form.get("school_logo_path"),
+                                                        LIMITS["logo_path"]) or "assets/logos/school_logo.png")
             settings.save()
             flash("บันทึกการตั้งค่าสำเร็จ", "success")
             return redirect(url_for("settings_page"))

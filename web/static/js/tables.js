@@ -173,6 +173,15 @@
                       confirm: function (btn) {
                           return "ลบสมาชิก " + btn.getAttribute("data-title") + "?";
                       } },
+            code: { url: function (id) { return "/members/" + id + "/activation-code"; },
+                    confirm: null },
+            resetpin: { url: function (id) { return "/members/" + id + "/reset-pin"; },
+                        confirm: function (btn) {
+                            return "ล้างรหัส PIN ของสมาชิก "
+                                + btn.getAttribute("data-title") + "? "
+                                + "สมาชิกต้องยืนยันตัวตนใหม่ด้วยบัตร "
+                                + "หรือรหัสเปิดใช้งานจากผู้ดูแล";
+                        } },
         },
     };
 
@@ -229,7 +238,17 @@
                     + " title='ดู QR'><svg width='14' height='14'>"
                     + "<use href='#icon-image'/></svg></a>";
             }
-            return qr
+            /* portal state decides the pin action: no PIN -> issue the
+             * one-time code; activated -> offer clearing it (never both) */
+            var pinBtn = (row.pin_set === 1)
+                ? "<button type='button' class='btn btn-ghost btn-sm'"
+                  + " data-row-action='resetpin' data-id='" + id + "'"
+                  + " data-title='" + esc(row.name) + "'"
+                  + " title='ล้างรหัส PIN — สมาชิกต้องยืนยันตัวตนใหม่'>ล้าง PIN</button>"
+                : "<button type='button' class='btn btn-success btn-sm'"
+                  + " data-row-action='code' data-id='" + id + "'"
+                  + " title='สร้างรหัสเปิดใช้งาน (ใช้ได้ครั้งเดียว 15 นาที)'>สร้างรหัส</button>";
+            return qr + pinBtn
                 + "<button type='button' class='btn btn-danger btn-sm'"
                 + " data-row-action='delete' data-id='" + id + "'"
                 + " data-title='" + esc(row.name) + "'"
@@ -346,6 +365,62 @@
         });
     }
 
+    /* ---- one-time activation code (members page) ----
+     * The code returns as JSON exactly once (it lives nowhere else), so
+     * this action can't use rowPost's redirect-to-page flow: it shows a
+     * SweetAlert with the code + a copy button, then reloads the table
+     * (the row's action switches to ล้าง PIN on the next draw). */
+    function issueActivationCode(id) {
+        fetch("/members/" + id + "/activation-code", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "X-CSRF-Token": PyLib.csrfToken() || "" },
+        }).then(function (r) {
+            if (r.status === 403) {
+                PyLib.toast("เซสชันหมดอายุ โปรดล็อกอินใหม่", "error");
+                return null;
+            }
+            if (!r.ok) { PyLib.toast("ดำเนินการไม่สำเร็จ", "error"); return null; }
+            return r.json().catch(function () { return null; });
+        }).then(function (j) {
+            if (!j) { return; }
+            if (!j.ok) {
+                PyLib.toast(j.message || "ดำเนินการไม่สำเร็จ", "error");
+                return;
+            }
+            showActivationCode(j.code);
+            tableEl.ajax.reload(null, false);
+        }).catch(function () {
+            PyLib.toast("เกิดข้อผิดพลาดเครือข่าย", "error");
+        });
+    }
+
+    function showActivationCode(code) {
+        var html = "<div class='code-big'>" + esc(code) + "</div>"
+            + "<p style='font-size:13px;color:#4E6472'>ใช้ได้ครั้งเดียว ภายใน 15 นาที<br>"
+            + "สมาชิกใช้รหัสนี้ที่หน้า เปิดใช้งาน บนเว็บ เพื่อตั้งรหัส PIN ของตนเอง"
+            + "<br>รหัสนี้จะไม่แสดงอีก — คัดลอกหรือจดไว้ก่อนปิดหน้าต่างนี้</p>";
+        if (window.Swal) {
+            window.Swal.fire({
+                title: "รหัสเปิดใช้งาน",
+                html: html,
+                icon: "success",
+                showCancelButton: true,
+                confirmButtonText: "คัดลอกรหัส",
+                cancelButtonText: "ปิด",
+                confirmButtonColor: "#1E4B63",
+            }).then(function (res) {
+                if (res.isConfirmed && navigator.clipboard) {
+                    navigator.clipboard.writeText(code).then(function () {
+                        PyLib.toast("คัดลอกรหัสแล้ว", "success");
+                    }, function () { /* clipboard may be blocked — code is shown anyway */ });
+                }
+            });
+        } else {
+            PyLib.toast("รหัสเปิดใช้งาน: " + code, "warning");
+        }
+    }
+
     /* ------------------------------------------------------------------ *
      *  Bulk handlers
      * ------------------------------------------------------------------ */
@@ -439,8 +514,14 @@
     $(tableSel + " tbody").on("click", "[data-row-action]", function () {
         if (busy) return;
         var btn = this;
-        var def = actionDef[btn.getAttribute("data-row-action")];
+        var actionName = btn.getAttribute("data-row-action");
+        var def = actionDef[actionName];
         if (!def) return;
+        /* one-time activation code needs its own JSON flow (above) */
+        if (kind === "members" && actionName === "code") {
+            issueActivationCode(btn.getAttribute("data-id"));
+            return;
+        }
         var proceed = def.confirm
             ? PyLib.confirm({ text: def.confirm(btn),
                               icon: "warning", danger: true })

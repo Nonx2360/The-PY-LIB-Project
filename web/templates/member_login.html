@@ -1,0 +1,32 @@
+{% extends "member_base.html" %}
+{% block title %}เข้าสู่ระบบสมาชิก — THE PY-LIB{% endblock %}
+{% block member_content %}
+<div class="member-card">
+    <h2>เข้าสู่ระบบสมาชิก</h2>
+    <p class="member-sub">ใช้ชั้น+เลขที่ และรหัส PIN ที่สมาชิกตั้งไว้เอง</p>
+    <form method="POST" autocomplete="off">
+        {{ csrf_field }}
+        <div class="form-group">
+            <label>ชั้น/ห้อง</label>
+            <input type="text" name="grade" placeholder="ม.4/1"
+                   maxlength="40" required autofocus>
+        </div>
+        <div class="form-group">
+            <label>เลขที่</label>
+            <input type="text" name="number" placeholder="15"
+                   maxlength="20" required>
+        </div>
+        <div class="form-group">
+            <label>รหัส PIN</label>
+            <input type="password" name="pin" placeholder="••••••"
+                   maxlength="64" required>
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">เข้าสู่ระบบ</button>
+    </form>
+    <p class="member-alt">
+        ยังไม่มีรหัส PIN?
+        <a href="{{ url_for('member_activate') }}">เปิดใช้งานครั้งแรก</a>
+        — สแกนบัตรของตัวเอง หรือใช้รหัสที่ผู้ดูแลออกให้ แล้วตั้ง PIN เอง
+    </p>
+</div>
+{% endblock %}

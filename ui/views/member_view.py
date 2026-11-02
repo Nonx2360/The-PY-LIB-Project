@@ -131,7 +131,10 @@ class MemberView(ctk.CTkFrame):
         self.list_frame.render(members, self._member_row)
 
     def _member_row(self, m):
-        mid, name, grade, number, reg, exp, qr_data, qr_path = m
+        # SELECT * row: id, name, grade, number, reg, exp, qr_data, qr_path,
+        # pin_hash (v4 — portal-login presence; hash itself is never shown)
+        mid, name, grade, number, reg, exp, qr_data, qr_path = m[:8]
+        pin_set = bool(m[8]) if len(m) > 8 else False
         row = theme.card(self.list_frame, corner_radius=10)
         row.pack(fill="x", padx=4, pady=4)
         row.grid_columnconfigure(2, weight=1)
@@ -150,7 +153,9 @@ class MemberView(ctk.CTkFrame):
         ctk.CTkLabel(row, text=name, font=theme.font(15, bold=True),
                      text_color=theme.text_color(), anchor="w").grid(
             row=0, column=2, sticky="w", pady=(8, 0))
-        info = f"ชั้น {grade}  •  เลขที่ {number}"
+        portal = "เปิดใช้งานหน้าสมาชิกแล้ว" if pin_set \
+            else "ยังไม่เปิดใช้งานหน้าสมาชิก"
+        info = f"ชั้น {grade}  •  เลขที่ {number}  •  {portal}"
         ctk.CTkLabel(row, text=info, font=theme.font(12),
                      text_color=theme.muted_color(), anchor="w").grid(
             row=1, column=2, sticky="w", pady=(0, 8))
@@ -165,6 +170,15 @@ class MemberView(ctk.CTkFrame):
                                width=72, height=30).pack(side="left", padx=2)
         theme.secondary_button(btn_row, "บัตร PDF", lambda mm=m: self._view_card(mm),
                                width=80, height=30).pack(side="left", padx=2)
+        if pin_set:
+            theme.ghost_button(btn_row, "ล้าง PIN",
+                               lambda mm=m: self._clear_member_pin(mm),
+                               width=78, height=30,
+                               text_color=theme.DANGER).pack(side="left", padx=2)
+        else:
+            theme.secondary_button(btn_row, "สร้างรหัส",
+                                   lambda mm=m: self._issue_member_code(mm),
+                                   width=84, height=30).pack(side="left", padx=2)
         theme.ghost_button(btn_row, "ลบ", lambda mm=m: self._delete_member(mm),
                            width=56, height=30, text_color=theme.DANGER).pack(side="left", padx=2)
 
@@ -332,6 +346,71 @@ class MemberView(ctk.CTkFrame):
         except Exception as e:
             logger.error(f"view_card error: {e}", exc_info=True)
             show_toast(self, f"ไม่สามารถเปิดบัตรได้: {e}", "red")
+
+    # ================= portal PIN management =================
+    def _issue_member_code(self, member):
+        """Mint a one-time activation code; the plaintext is shown ONCE.
+
+        Only for members without a portal PIN — an activated account
+        needs ล้าง PIN first. Nothing sensitive is logged; the code is
+        SHA-256-hashed at rest in member_activation_codes.
+        """
+        if self.repo.pin_state(member[0]) == "set":
+            show_toast(self, "สมาชิกเปิดใช้งานหน้าของตนเองอยู่แล้ว — "
+                             "หากต้องการรีเซ็ต ให้ล้างรหัส PIN ก่อน", "red")
+            return
+        code = self.repo.issue_activation_code(member[0])
+        logger.info("desktop members: activation code issued id=%d", member[0])
+        self._show_activation_code_dialog(code, member[1])
+
+    def _show_activation_code_dialog(self, code, name):
+        win = ctk.CTkToplevel(self)
+        win.title("รหัสเปิดใช้งานหน้าสมาชิก")
+        win.geometry("440x300")
+        win.resizable(False, False)
+        win.grab_set()
+
+        frame = theme.card(win)
+        frame.pack(padx=16, pady=16, fill="both", expand=True)
+        ctk.CTkLabel(frame, text="รหัสเปิดใช้งาน", font=theme.font(19, bold=True),
+                     text_color=theme.text_color()).pack(pady=(14, 2))
+        ctk.CTkLabel(frame, text=f"สำหรับสมาชิก: {name}",
+                     font=theme.font(13), text_color=theme.muted_color()).pack()
+        code_lbl = ctk.CTkLabel(frame, text=code,
+                                font=ctk.CTkFont(family="Consolas", size=24,
+                                                 weight="bold"),
+                                text_color=theme.PRIMARY)
+        code_lbl.pack(pady=14)
+        ctk.CTkLabel(frame,
+                     text=("ใช้ได้ครั้งเดียว ภายใน 15 นาที\n"
+                           "สมาชิกใส่รหัสนี้ที่หน้า เปิดใช้งาน แล้วตั้ง PIN ของตนเอง\n"
+                           "รหัสนี้จะไม่แสดงอีก — คัดลอกหรือจดไว้ก่อนปิดหน้าต่างนี้"),
+                     font=theme.font(12), text_color=theme.muted_color(),
+                     justify="center").pack(pady=(0, 10))
+
+        def copy_code():
+            self.clipboard_clear()
+            self.clipboard_append(code)
+            show_toast(self, "คัดลอกรหัสเปิดใช้งานแล้ว", "green")
+
+        btns = ctk.CTkFrame(frame, fg_color="transparent")
+        btns.pack(pady=(0, 14))
+        theme.primary_button(btns, "คัดลอกรหัส", copy_code,
+                             width=140, height=34).pack(side="left", padx=4)
+        theme.secondary_button(btns, "ปิด", win.destroy,
+                               width=110, height=34).pack(side="left", padx=4)
+
+    def _clear_member_pin(self, member):
+        if not show_confirm_dialog(
+                self, "ล้างรหัส PIN",
+                f"ล้างรหัส PIN หน้าสมาชิกของ '{member[1]}' ใช่หรือไม่?\n"
+                "สมาชิกต้องยืนยันตัวตนใหม่ด้วยบัตร หรือรหัสเปิดใช้งานจากผู้ดูแล\n"
+                "(รหัสเปิดใช้งานค้าง ๆ ทั้งหมดจะถูกยกเลิกด้วย)"):
+            return
+        self.repo.clear_pin(member[0])
+        logger.info("desktop members: portal pin cleared id=%d", member[0])
+        show_toast(self, "ล้างรหัส PIN แล้ว — สมาชิกต้องเปิดใช้งานใหม่", "amber")
+        self._display_members()
 
     def _delete_member(self, member):
         # borrow_log/access_log carry FOREIGN KEYs to members: a member with

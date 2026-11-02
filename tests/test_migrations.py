@@ -172,6 +172,58 @@ class TestMigrations(unittest.TestCase):
         self.schema_mod.init_db(log=lambda *a, **k: None)
         self.assertEqual(self._user_version(), self.schema_mod.SCHEMA_VERSION)
 
+    # ---------------- v4: member portal era ----------------
+
+    def test_upgrade_adds_pin_hash_column(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(members)").fetchall()}
+        finally:
+            conn.close()
+        self.assertIn("pin_hash", cols)
+
+    def test_upgrade_creates_activation_codes_table_and_index(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            indexes = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='index' AND tbl_name='member_activation_codes'").fetchall()}
+            # pin_hash must start NULL: the upgrade never invents credentials
+            pin = conn.execute(
+                "SELECT pin_hash FROM members WHERE id=1").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertIn("member_activation_codes", tables)
+        self.assertIn("idx_activation_member", indexes)
+        self.assertIsNone(pin)
+
+    def test_legacy_member_row_preserved_pinless(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            row = conn.execute(
+                "SELECT id, name, grade, number, register_date, expire_date "
+                "FROM members WHERE id=1").fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row, (1, "สมใจ", "ม.1/1", "12",
+                               "2026-01-01", "2027-01-01"))
+
+    def test_activation_code_hash_unique_enforced(self):
+        repo = BaseRepository()
+        conn = repo.get_connection()
+        try:
+            conn.execute(
+                "INSERT INTO member_activation_codes (member_id, code_hash, "
+                "created_at, expires_at) VALUES (1, 'hash-unique-1', 'x', 'y')")
+            with self.assertRaises(sqlite3.IntegrityError):
+                conn.execute(
+                    "INSERT INTO member_activation_codes (member_id, code_hash, "
+                    "created_at, expires_at) VALUES (1, 'hash-unique-1', 'z', 'w')")
+        finally:
+            conn.close()
+
 
 class TestFreshInstallLayout(unittest.TestCase):
     """Fresh installs are created directly in the constrained (current) layout."""
@@ -216,6 +268,21 @@ class TestFreshInstallLayout(unittest.TestCase):
         with self.assertRaises(sqlite3.IntegrityError):
             repo.execute("INSERT INTO books (code, title, status) VALUES (?, ?, ?)",
                          ("F-001", "dup", "ว่าง"))
+
+    def test_fresh_layout_carries_member_portal_tables(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(members)").fetchall()}
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            indexes = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='index' AND tbl_name='member_activation_codes'").fetchall()}
+        finally:
+            conn.close()
+        self.assertIn("pin_hash", cols)
+        self.assertIn("member_activation_codes", tables)
+        self.assertIn("idx_activation_member", indexes)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}หน้าสมาชิก — THE PY-LIB{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    {% block head %}{% endblock %}
+</head>
+<body class="login-body member-body">
+    {% include 'icons.svg' %}
+    <div class="member-shell">
+        <header class="member-topbar">
+            <a class="member-brand" href="{{ url_for('member_login') }}">
+                <img src="{{ url_for('serve_assets', filename='logos/school_logo.png') }}" alt="Logo" class="brand-logo"
+                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                <div class="brand-icon" style="display:none">
+                    <svg width="24" height="24"><use href="#icon-book-open"/></svg>
+                </div>
+                <span class="member-brand-text">THE PY-LIB<small>หน้าสมาชิก</small></span>
+            </a>
+            {% if session.member_id %}
+            <form method="POST" action="{{ url_for('member_logout') }}" class="member-logout-form">
+                {{ csrf_field }}
+                <button type="submit" class="btn btn-ghost btn-sm">ออกจากระบบ</button>
+            </form>
+            {% elif session.activation_member_id %}
+            <span class="member-topbar-note">กำลังเปิดใช้งาน — ตั้งรหัส PIN ด้านล่าง</span>
+            {% endif %}
+        </header>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="member-alerts">
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">
+                <svg width="16" height="16" class="alert-icon">
+                    {% if category == 'success' %}<use href="#icon-check-circle"/>
+                    {% elif category == 'error' %}<use href="#icon-x-circle"/>
+                    {% else %}<use href="#icon-alert-triangle"/>{% endif %}
+                </svg>
+                {{ message }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+        <main class="member-content">
+            {% block member_content %}{% endblock %}
+        </main>
+        <footer class="member-foot">
+            ระบบห้องสมุด THE PY-LIB — หน้านี้ใช้ตรวจสถานะและแสดง QR ของตัวเองเท่านั้น
+        </footer>
+    </div>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

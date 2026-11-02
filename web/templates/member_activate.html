@@ -1,0 +1,66 @@
+{% extends "member_base.html" %}
+{% block title %}เปิดใช้งานหน้าสมาชิก — THE PY-LIB{% endblock %}
+{% block head %}
+<script src="{{ url_for('static', filename='js/jsQR.js') }}"></script>
+{% endblock %}
+{% block member_content %}
+
+{% if activation_member %}
+<div class="member-card member-card-step2">
+    <p class="member-step-tag">ขั้นตอนที่ 2 จาก 2</p>
+    <h2>ตั้งรหัส PIN ของคุณ</h2>
+    <p class="member-sub">ยืนยันสมาชิก: <strong>{{ activation_member }}</strong></p>
+    <form method="POST" action="{{ url_for('member_activate_setpin') }}" autocomplete="off">
+        {{ csrf_field }}
+        <div class="form-group">
+            <label>รหัส PIN ใหม่ (6–64 ตัวอักษร)</label>
+            <input type="password" name="pin1" id="pin1" minlength="6"
+                   maxlength="64" required autofocus>
+        </div>
+        <div class="form-group">
+            <label>พิมพ์ซ้ำอีกครั้ง</label>
+            <input type="password" name="pin2" minlength="6"
+                   maxlength="64" required>
+        </div>
+        <button type="submit" class="btn btn-success btn-block">บันทึกและเข้าสู่ระบบ</button>
+    </form>
+    <p class="member-note">รหัสนี้จะใช้เข้าหน้าสมาชิกจากนี้ต่อไป — ห้ามใช้วันเกิดหรือชุดตัวเลขที่เดาง่าย</p>
+    <p class="member-note muted">หากต้องการเปลี่ยนบัญชี: รอ 10 นาทีให้หมดเวลา แล้วเริ่มขั้นตอนที่ 1 ใหม่</p>
+</div>
+
+{% else %}
+<div class="member-card">
+    <p class="member-step-tag">ขั้นตอนที่ 1 จาก 2</p>
+    <h2>เปิดใช้งานหน้าสมาชิก</h2>
+    <p class="member-sub">ยืนยันตัวตนครั้งแรก แล้วตั้งรหัส PIN ของตัวเอง</p>
+
+    <div class="card question-card" style="border: none; background: var(--navy-wash); margin-bottom: 12px;">
+        <div class="card-body" style="padding: 14px;">
+            <h3 style="margin-bottom: 10px;">วิธีที่ 1 — สแกน QR ที่บัตรของตัวเอง</h3>
+            <form method="POST" action="{{ url_for('member_activate_scan') }}" id="scanForm">
+                {{ csrf_field }}
+                <input type="hidden" name="payload" id="scanPayload">
+                <button type="button" class="btn btn-primary" id="scanBtn">เปิดกล้องสแกนบัตร</button>
+                <video id="scanVideo" style="display:none; width: 100%; max-width: 320px; border-radius: 8px; background: #000;"></video>
+                <canvas id="scanCanvas" style="display:none;"></canvas>
+                <span class="scan-status" id="scanStatus" style="display:none"></span>
+            </form>
+            <p class="member-note muted">ต้องเปิดผ่านชื่อเครื่องเอง (localhost) หรือ https:// กล้องจึงจะใช้ได้</p>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('member_activate_code') }}" class="member-code-form">
+        {{ csrf_field }}
+        <div class="form-group">
+            <label>วิธีที่ 2 — รหัสเปิดใช้งานจากผู้ดูแล (ใช้ได้ครั้งเดียว 15 นาที)</label>
+            <input type="text" name="code" placeholder="วางรหัสที่ได้รับ" maxlength="80" required>
+        </div>
+        <button type="submit" class="btn btn-secondary">ยืนยันรหัส</button>
+    </form>
+</div>
+{% endif %}
+
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/member_scan.js') }}"></script>
+{% endblock %}

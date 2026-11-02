@@ -45,8 +45,18 @@
   - **Flatpickr (th)** — ปฏิทินเลือกกำหนดคืน พร้อมปุ่มด่วน 7/14/21/30 วัน
   - ลำดับโหลด: sweetalert2 → ui.js → [jquery + datatables + tables.js] → alpine (สำคัญ อย่าสลับ)
 
+### หน้าสมาชิก (Member Portal)
+- สมาชิกเข้าสู่ระบบด้วย **ชั้น + เลขที่ + PIN** ที่ตั้งเอง (bcrypt เก็บเฉพาะแฮช) — เห็นได้แค่ข้อมูลของตัวเอง
+- หน้าสถานะแบบอ่านอย่างเดียว: หนังสือที่กำลังยืม + วันกำหนดคืน (ป้ายเกินกำหนด/วันนี้), รายการคืนล่าสุด, ประวัติเข้าใช้ห้องสมุด — ไม่มีปุ่มยืม/คืน ทุกการยืม-คืนยังทำที่เคาน์เตอร์
+- **QR หมุนเวียน (v3 ticket)**: หน้าสมาชิกแสดง QR ประจำตัวที่เปลี่ยนอัตโนมัติตามรอบเวลา (ผู้ดูแลตั้งได้ 1–72 ชม. + เผื่อรอบข้างเคียง 0–2) — QR จากบัตรถ่ายรูปเอาไปใช้ต่อไม่ได้เมื่อรอบเปลี่ยน
+- ยืนยันตัวตนครั้งแรก 2 วิธี: สแกนบัตรของตัวเองด้วยกล้อง หรือรหัสเปิดใช้งานครั้งเดียวจากผู้ดูแล (แสดงบนหน้าจอครั้งเดียว, เก็บแฮช SHA-256 ที่ฐานข้อมูล, หมดอายุ 15 นาที)
+- ผู้ดูแลล้าง PIN ให้สมาชิกได้ (เดสท็อป/เว็บ) — รหัสเปิดใช้งานที่ค้างถูกยกเลิกพร้อมกัน สมาชิกต้องยืนยันตัวตนใหม่
+- เปิด/ปิดหน้าสมาชิกทั้งระบบได้จากตั้งค่า (ปิด → /member คืน 404) และยังเลือกได้ว่าจะยังรับ QR บนบัตรพลาสติกแบบเดิมหรือไม่
+- Session สมาชิกแยกจาก admin คนละ key — ล็อกอินสองฝั่งไม่แทรกกัน, จำกัดล็อกอินผิด 5 ครั้ง/15 นาที (ต่อ IP+ชั้น+เลขที่), ข้อความผิดพลาดกลั่นแกล้งไม่ได้ว่า "ไม่มีสมาชิกนี้"
+
 ### ความปลอดภัย
 - ข้อมูล QR เข้ารหัสแบบ AEAD **AES-256-GCM (`v2:`)** และยังถอดรหัสการ์ดเก่าแบบ AES-256-CBC อย่างเข้มงวด (strict legacy fallback)
+- **ตั๋ว QR หมุนเวียน (`v3:`)**: AES-256-GCM + AAD ผูกโปรโตคอล ("pylib-member-ticket-v3") — ตั๋วแต่ละรอบมีอายุตามเวลา ถอดรหัสฝั่งเซิร์ฟเวอร์เท่านั้น, payload เล็ก (สแกนง่าย) และปฏิเสธ JSON ที่เกินมา/ชนิดผิด
 - PBKDF2 key derivation (100k iterations) สำหรับ QR encryption key
 - รหัสผ่าน admin แฮชด้วย bcrypt — ไม่มีรหัสผ่านดีฟอลต์ และตรวจแบบ timing-equalized
 - จำกัดการล็อกอินล้มเหลว (5 ครั้ง / 15 นาที ต่อผู้ใช้) ทั้งเว็บและเดสท็อป
@@ -124,20 +134,21 @@ THE-PY-LIB/
 │   ├── env_store.py             # .env secrets: auto-generate, guard placeholders
 │   └── settings.json            # User settings (auto-created)
 ├── core/
-│   ├── security.py              # bcrypt hash/verify, AES-256-GCM `v2:` + legacy AES-CBC (PBKDF2)
+│   ├── security.py              # bcrypt hash/verify, AES-GCM `v2:` badges + `v3:` rotating tickets + legacy AES-CBC (PBKDF2)
 │   ├── logger.py                # logging config (debug.log support)
 │   └── throttle.py              # Sliding-window login lockout (desktop + web)
 ├── db/                          # บางไฟล์ถูกสร้างตอน runtime: library.db, INITIAL_ADMIN_PASSWORD.txt (gitignored)
-│   ├── schema.py                # CREATE TABLE + user_version migrations + admin bootstrap
+│   ├── schema.py                # CREATE TABLE + user_version migrations (v1→v4) + admin bootstrap
 │   └── repositories/
 │       ├── base_repo.py         # Thread-safe SQLite (per-query connection + Lock)
-│       ├── member_repo.py       # CRUD สมาชิก (+ badge uniqueness check)
+│       ├── member_repo.py       # CRUD สมาชิก (+ PIN bcrypt, activation codes, atomic activation)
 │       ├── book_repo.py         # CRUD หนังสือ (uses book status constants)
 │       ├── borrow_repo.py       # try_borrow / try_return — atomic invariants
 │       ├── access_repo.py       # Access log
 │       └── admin_repo.py        # admin_users + timing-equalized verify_credentials
 ├── services/
 │   ├── qr_service.py            # สร้าง/ถอดรหัส QR (AES)
+│   ├── member_identity.py       # Resolver เดียวสำหรับ QR ทุกชนิด (v3 ตั๋ว/v2 บัตร/legacy) + นโยบายหน้าต่างเวลา
 │   ├── pdf_service.py           # บัตรสมาชิก PDF + รายงาน
 │   ├── camera_service.py        # กล้อง + ถอดรหัส QR
 │   ├── excel_service.py         # Import/Export Excel
@@ -154,7 +165,7 @@ THE-PY-LIB/
 │   │   ├── return_view.py       # Scan + borrowed list + return
 │   │   ├── history_view.py      # Table search + PDF export
 │   │   ├── access_view.py       # Scanner + history (AccessScannerView/AccessHistoryView)
-│   │   ├── settings_view.py     # Theme, loan settings, school info, DB backup
+│   │   ├── settings_view.py     # Theme, loan settings, member portal, school info, DB backup
 │   │   └── webui_view.py        # Web UI launcher control panel
 │   └── widgets/
 │       ├── confirm_dialog.py    # Modal confirm dialog
@@ -179,12 +190,18 @@ THE-PY-LIB/
 │   │   └── js/
 │   │       ├── jsQR.js          # Vendored jsQR (in-browser QR decode)
 │   │       ├── scan.js          # Camera capture + /scan/resolve calls
+│   │       ├── member_scan.js   # กล้องสแกนบัตร บนหน้าเปิดใช้งานสมาชิก
+│   │       ├── member_qr.js     # นับเวลาถอยหลัง + สลับ QR เมื่อรอบเปลี่ยน
 │   │       ├── tables.js        # DataTables configs (books/members/history) + bulk bar
 │   │       └── ui.js            # PyLib helpers: dialogs, toasts, data-confirm, flatpickr init
 │   └── templates/
 │       ├── icons.svg            # Lucide SVG icon sprite
 │       ├── base.html            # Layout + sidebar + vendor stack wiring
 │       ├── login.html           # Login page
+│       ├── member_base.html     # หน้าสมาชิก (shell แยก ไม่มีเมนู admin)
+│       ├── member_login.html    # สมาชิกเข้าสู่ระบบ (ชั้น+เลขที่+PIN)
+│       ├── member_activate.html # เปิดใช้งานครั้งแรก (สแกนบัตร หรือรหัสแอดมิน) + ตั้ง PIN
+│       ├── member_portal.html   # สถานะของตัวเอง + QR หมุนเวียนพร้อมนับเวลา
 │       ├── index.html           # Dashboard + Chart.js widgets
 │       ├── members.html         # Member management
 │       ├── books.html           # Book management (retire/restore/purge)
@@ -200,9 +217,11 @@ THE-PY-LIB/
 │   ├── _harness.py              # Temp-DB/env isolation for tests
 │   ├── test_security.py         # Password hashing + QR crypto
 │   ├── test_qr_security.py      # QR payload formats & rejection paths
-│   ├── test_migrations.py       # Schema v1→v2 + book-code dedupe
+│   ├── test_migrations.py       # Schema v1→v4 upgrades + book-code dedupe + fresh layout
 │   ├── test_desktop_paging.py   # Capped list-window math (large catalog guard)
-│   ├── test_member_repo.py      # Member CRUD
+│   ├── test_member_repo.py      # Member CRUD + PIN/activation-code methods
+│   ├── test_rotating_tickets.py # `v3:` ticket crypto, window math, identity dispatch
+│   ├── test_member_portal.py    # หน้าสมาชิก: activation, login, portal, admin PIN reset
 │   ├── test_book_repo.py        # Book CRUD
 │   ├── test_borrow_atomic.py    # Atomic borrow/return invariants
 │   ├── test_admin_bootstrap.py  # No-default-password bootstrap
@@ -244,6 +263,10 @@ THE-PY-LIB/
 | ชื่อโรงเรียน | แสดงในบัตรสมาชิกและหน้าเว็บ | DSNPRU |
 | โลโก้โรงเรียน | ไฟล์ PNG สำหรับบัตรสมาชิกและ sidebar | — |
 | Web UI host | 127.0.0.1 (loopback) หรือ 0.0.0.0 (LAN + HTTPS) | 127.0.0.1 |
+| เปิดหน้าสมาชิก | เปิด/ปิดหน้าสมาชิกทั้งระบบ (ปิดแล้ว `/member*` คืน 404) | เปิด |
+| รอบเปลี่ยน QR สมาชิก (ชั่วโมง) | ช่วงเวลาต่อรอบของ QR หมุนเวียนบนหน้าสมาชิก (1–72) | 12 ชม. |
+| เผื่อรอบข้างเคียง | จำนวนรอบเผื่อ (0–2) สำหรับนาฬิกาที่คลาดกันระหว่างเครื่องสแกน/แสดง QR | 1 รอบ |
+| รับ QR บัตรเดิม | ยังรับ QR แบบไม่หมดอายุบนบัตรพลาสติก/กระดาษ (ปิดเมื่อสมาชิกเปิดใช้งานครบ) | เปิด |
 
 ---
 
@@ -252,14 +275,16 @@ THE-PY-LIB/
 | คุณสมบัติ | วิธีใช้ |
 |---|---|
 | รหัสผ่าน admin | `bcrypt` hash/verify; ไม่มีดีฟอลต์ — บูตแรกสร้างรหัสสุ่มและปริ้นครั้งเดียว; 'admin123' เก่าถูกปลดอัตโนมัติทุกบูต |
-| เข้ารหัส QR | `AES-256-GCM` (`v2:` authenticated envelope) ใหม่; legacy `AES-256-CBC` ถอดรหัสแบบ strict จนกว่าจะย้ายด้วย `tools/rotate_qr_key.py` |
+| เข้ารหัส QR | `AES-256-GCM` (`v2:` บัตรคงที่; `v3:` ตั๋วหมุนเวียน bind AAD) ใหม่; legacy `AES-256-CBC` ถอดรหัสแบบ strict จนกว่าจะย้ายด้วย `tools/rotate_qr_key.py` |
 | Key derivation | PBKDF2-HMAC-SHA256 (100k iters) จาก secrets ใน `.env` ที่ถูก generate อัตโนมัติและกัน placeholder |
-| Login throttling | เว็บและเดสท็อป: 5 ครั้งล้มเหลวต่อ 15 นาที → ล็อกชั่วคราว (เว็บต่อ IP+username) |
+| ตั๋วสมาชิกหมุนเวียน | ตั๋วแต่ละรอบมี `member_id`+`epoch` ข้างใน, ตรวจหน้าต่างเวลาฝั่งเซิร์ฟเวอร์ (ปัดเวลาตามรอบ + เผื่อรอบ), ไม่มี derived state — ไม่ต้อง persist |
+| Login throttling | เว็บและเดสท็อป: 5 ครั้งล้มเหลวต่อ 15 นาที → ล็อกชั่วคราว (เว็บ admin ต่อ IP+username; หน้าสมาชิกต่อ IP+ชั้น+เลขที่) |
+| รหัส PIN สมาชิก | bcrypt เก็บใน `members.pin_hash` (NULL = ยังไม่เปิดใช้งาน); เปิดใช้งานครั้งแรกต้องผ่านบัตรจริงหรือรหัสแอดมิน — รหัสเก็บแฮช SHA-256 + หมดอายุ 15 นาที + ใช้ได้ครั้งเดียว (atomic claim) |
 | Web session | HttpOnly/SameSite=Lax cookie, CSRF token ทุก POST (constant-time compare), login timing-equalized กัน enumeration |
 | SQL Injection | Parameterized queries ทุกที่, status เปรียบเทียบผ่านพารามิเตอร์ |
 | Data integrity | FK enforcement, UNIQUE index บน books.code, borrow_log CHECK (returned IN (0,1)), borrow/return เป็น single IMMEDIATE transaction |
 | Thread safety | `BaseRepository` ใช้ connection-per-query + `threading.Lock`, `transact()` สำหรับ multi-statement |
-| Schema migrations | `PRAGMA user_version` (v1 legacy → v2 constraints → v3 bulk-import indexes) รันอัตโนมัติและ idempotent ทุกบูต |
+| Schema migrations | `PRAGMA user_version` (v1 legacy → v2 constraints → v3 bulk-import indexes → v4 member portal: pin_hash + activation codes) รันอัตโนมัติและ idempotent ทุกบูต |
 | Secrets | `.env` (gitignored), ป้องกันค่า placeholder, การเปลี่ยนมี runbook ใน `docs/SECURITY.md` |
 
 ---
@@ -286,7 +311,7 @@ venv\Scripts\python -m unittest discover -s tests
 venv/bin/python -m unittest discover -s tests
 ```
 
-ปัจจุบันมี 130 test cases (16 test files) ครอบคลุม security, repositories, migrations, atomic borrow/return, backups, bulk imports, DataTables list APIs + bulk endpoints, offline-safety (ไม่มี CDN/ฟอนต์ภายนอก), desktop list-paging และ guards ของเว็บ
+ปัจจุบันมี 193 test cases (18 test files) ครอบคลุม security, rotating tickets, member portal, repositories, migrations, atomic borrow/return, backups, bulk imports, DataTables list APIs + bulk endpoints, offline-safety (ไม่มี CDN/ฟอนต์ภายนอก), desktop list-paging และ guards ของเว็บ
 
 ---
 
@@ -295,10 +320,11 @@ venv/bin/python -m unittest discover -s tests
 | Table | คำอธิบาย |
 |---|---|
 | `admin_users` | ผู้ดูแลระบบ (bcrypt hashed password, ไม่มีดีฟอลต์) |
-| `members` | ข้อมูลสมาชิกห้องสมุด (ชื่อ, ชั้น, เลขที่, QR, วันหมดอายุ) — badge key (ชั้น, เลขที่) ต้องไม่ซ้ำกันในระบบใหม่ |
+| `members` | ข้อมูลสมาชิกห้องสมุด (ชื่อ, ชั้น, เลขที่, QR, วันหมดอายุ, `pin_hash` — แฮช PIN หน้าสมาชิก NULL จนกว่าจะเปิดใช้งานเอง) — badge key (ชั้น, เลขที่) ต้องไม่ซ้ำกันในระบบใหม่ |
 | `books` | หนังสือในระบบ (รหัส [UNIQUE], ชื่อ, สถานะ: `ว่าง` / `ยืมแล้ว` / `หยุดให้บริการ`) |
 | `borrow_log` | บันทึกการยืม-คืน (returned CHECK 0/1, FK ไป members/books) |
 | `access_log` | บันทึกการเข้า-ออกห้องสมุด |
+| `member_activation_codes` | รหัสเปิดใช้งานครั้งเดียว (เก็บเฉพาะแฮช SHA-256, หมดอายุ 15 นาที, UNIQUE) — รหัสเปล่าไม่เคยถูกเก็บ |
 
 ---
 

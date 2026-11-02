@@ -8,6 +8,8 @@ from db.repositories.member_repo import MemberRepository
 from ui.widgets.scan_window import ScanWindow
 from ui.widgets.toast import show_toast
 from core.logger import logger
+from services import member_identity
+from services.member_identity import MemberIdentityError
 
 
 class AccessScannerView(ctk.CTkFrame):
@@ -60,31 +62,41 @@ class AccessScannerView(ctk.CTkFrame):
 
     def _handle_member_qr(self, decoded):
         try:
-            name, grade, number, *_ = decoded.split("|")
-            row = self.member_repo.fetchone(
-                "SELECT id FROM members WHERE name=? AND grade=? AND number=?",
-                (name, grade, number))
-            if row:
-                mid = row[0]
-                last = self.access_repo.fetchone(
-                    "SELECT action FROM access_log WHERE member_id=? ORDER BY id DESC LIMIT 1",
-                    (mid,))
-                action = "ออก" if (last and last[0] == "เข้า") else "เข้า"
-                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                self.access_repo.log_access(mid, ts, action)
-                color = theme.SUCCESS if action == "เข้า" else theme.INFO
-                self.status_label.configure(text=f"บันทึกการ{action}ห้องสมุดสำเร็จ ✓",
-                                            text_color=color)
-                self.last_scan_label.configure(
-                    text=f"{name}  •  ชั้น {grade}  •  เลขที่ {number}\nเวลา: {ts}",
-                    text_color=theme.text_color())
-                show_toast(self, f"บันทึกการ{action}ห้องสมุด: {name}", "green" if action == "เข้า" else "blue")
-            else:
-                self.status_label.configure(text="ไม่พบสมาชิกในระบบ", text_color=theme.DANGER)
-                show_toast(self, "ไม่พบสมาชิกในระบบ", "red")
-        except Exception as e:
-            logger.error(f"Access scan error: {e}", exc_info=True)
+            ident = member_identity.resolve_decoded(decoded, self.member_repo)
+        except MemberIdentityError as exc:
+            self.status_label.configure(text="สแกนไม่สำเร็จ", text_color=theme.DANGER)
+            show_toast(self, str(exc), "red")
+            return
+        except Exception:
+            logger.error("Access scan error", exc_info=True)
             self.status_label.configure(text="QR Code ไม่ถูกต้อง", text_color=theme.DANGER)
+            show_toast(self, "QR Code ไม่ถูกต้อง", "red")
+            return
+        try:
+            mid = ident["member_id"]
+            last = self.access_repo.fetchone(
+                "SELECT action FROM access_log WHERE member_id=? ORDER BY id DESC LIMIT 1",
+                (mid,))
+            action = "ออก" if (last and last[0] == "เข้า") else "เข้า"
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            self.access_repo.log_access(mid, ts, action)
+            color = theme.SUCCESS if action == "เข้า" else theme.INFO
+            self.status_label.configure(text=f"บันทึกการ{action}ห้องสมุดสำเร็จ ✓",
+                                        text_color=color)
+            self.last_scan_label.configure(
+                text=(f"{ident['name']}  •  ชั้น {ident['grade']}"
+                      f"  •  เลขที่ {ident['number']}\nเวลา: {ts}"),
+                text_color=theme.text_color())
+            show_toast(self, f"บันทึกการ{action}ห้องสมุด: {ident['name']}",
+                       "green" if action == "เข้า" else "blue")
+            if ident.get("expired"):
+                show_toast(self,
+                           "บัตรสมาชิกหมดอายุแล้ว — ส่งต่อเรื่องต่ออายุให้ผู้ดูแล",
+                           "red")
+        except Exception:
+            logger.error("Access log write failed", exc_info=True)
+            self.status_label.configure(text="บันทึกไม่สำเร็จ", text_color=theme.DANGER)
+            show_toast(self, "บันทึกการเข้า-ออกไม่สำเร็จ", "red")
             show_toast(self, "QR Code ไม่ถูกต้อง", "red")
 
 

@@ -509,3 +509,119 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
     display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
     margin-top: 14px; padding-top: 14px; border-top: 1px dashed var(--line);
 }
+
+/* ============================================================ *
+ *  Member portal (หน้าสมาชิก) — status-only pages rendered from
+ *  member_base.html: no admin navigation anywhere on purpose.
+ * ============================================================ */
+.muted { color: var(--ink-3); font-size: 14px; }
+
+.member-body { align-items: flex-start; }
+
+.member-shell {
+    width: 100%; max-width: 880px; min-height: 100vh;
+    margin: 0 auto; padding: 18px 16px 30px;
+    display: flex; flex-direction: column;
+}
+
+.member-topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 10px 14px; margin-bottom: 18px;
+    background: var(--navy-deep); color: #FFFFFF;
+    border-radius: var(--radius-card);
+}
+
+.member-brand {
+    display: flex; align-items: center; gap: 10px; color: #FFFFFF;
+}
+
+.member-brand .brand-logo { height: 34px; width: auto; }
+
+.member-brand-text {
+    font-family: var(--font-display); font-weight: 600; font-size: 17px;
+    display: flex; flex-direction: column; line-height: 1.15;
+}
+
+.member-brand-text small { font-weight: 400; font-size: 11px; color: #A4BCC9; }
+
+.member-logout-form { margin: 0; }
+.member-logout-form .btn-ghost { color: #DCE7EC; }
+.member-logout-form .btn-ghost:hover { color: #FFFFFF; background: rgba(255,255,255,0.08); }
+
+.member-topbar-note { font-size: 13px; color: #A4BCC9; }
+
+.member-alerts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+
+.member-content { flex: 1; display: flex; flex-direction: column; gap: 16px; }
+
+.member-foot { margin-top: 22px; text-align: center; color: var(--ink-3); font-size: 12px; }
+
+.member-expiry-ok { margin-bottom: -6px; }
+
+.member-card {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: var(--radius-card); box-shadow: var(--shadow-soft);
+    width: 100%; max-width: 430px; margin: 26px auto 0;
+    padding: 30px 34px 26px;
+}
+.member-card h2 {
+    font-family: var(--font-display); font-size: 21px; margin-bottom: 4px;
+}
+.member-card .member-sub { color: var(--ink-2); font-size: 14px; margin-bottom: 18px; }
+.member-card-step2 { max-width: 430px; }
+
+.member-step-tag {
+    display: inline-block; background: var(--navy-wash); color: var(--navy);
+    font-size: 12px; font-weight: 700; padding: 3px 10px;
+    border-radius: var(--radius-stamp); margin-bottom: 10px;
+}
+
+.member-alt { margin-top: 18px; font-size: 13px; color: var(--ink-2); }
+.member-alt a { color: var(--navy); font-weight: 600; text-decoration: underline; }
+
+.member-note { margin-top: 14px; font-size: 13px; color: var(--ink-2); }
+.member-note.stamp {
+    border-top: 1px dashed var(--line); padding-top: 10px;
+    color: var(--ink-3);
+}
+.member-note.muted { margin-top: 6px; }
+
+.member-code-form { margin-top: 4px; }
+
+/* portal layout: QR panel + profile side by side on wide screens */
+.portal-grid {
+    display: grid; grid-template-columns: minmax(280px, 340px) 1fr;
+    gap: 16px; align-items: stretch;
+}
+@media (max-width: 700px) { .portal-grid { grid-template-columns: 1fr; } }
+
+.qr-panel .card-body { text-align: center; }
+.qr-count {
+    font-size: 14px; color: var(--navy); background: var(--navy-wash);
+    border-radius: var(--radius-stamp); padding: 8px 10px; margin-top: 8px;
+}
+.qr-next-wrap summary {
+    cursor: pointer; font-size: 13px; color: var(--ink-2);
+    margin-top: 10px; user-select: none;
+}
+
+.member-profile .member-name {
+    font-family: var(--font-display); font-size: 20px; font-weight: 600;
+}
+
+.member-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.member-table th {
+    text-align: left; font-size: 12px; text-transform: uppercase;
+    letter-spacing: 0.03em; color: var(--ink-3);
+    border-bottom: 1px solid var(--line-strong); padding: 6px 8px;
+}
+.member-table td { padding: 7px 8px; border-bottom: 1px solid var(--line); }
+.member-table tbody tr:last-child td { border-bottom: none; }
+
+/* one-time activation code dialog (members admin page) */
+.code-big {
+    font-family: monospace; font-size: 26px; font-weight: 700;
+    letter-spacing: 3px; color: var(--navy);
+    background: var(--navy-wash); border-radius: var(--radius-stamp);
+    padding: 10px 16px; display: inline-block; margin: 4px 0 10px;
+}

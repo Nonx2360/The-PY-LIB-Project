@@ -9,6 +9,8 @@ from db.repositories.member_repo import MemberRepository
 from ui.widgets.scan_window import ScanWindow
 from ui.widgets.toast import show_toast
 from core.logger import logger
+from services import member_identity
+from services.member_identity import MemberIdentityError
 
 
 class ReturnView(ctk.CTkFrame):
@@ -74,27 +76,36 @@ class ReturnView(ctk.CTkFrame):
 
     def _handle_member_qr(self, decoded):
         try:
-            name, grade, number, *_ = decoded.split("|")
-            row = self.member_repo.fetchone(
-                "SELECT id FROM members WHERE name=? AND grade=? AND number=?",
-                (name, grade, number))
-            if row:
-                self._current_member = {"id": row[0], "name": name,
-                                        "grade": grade, "number": number}
-                self.status_label.configure(text="พบข้อมูลสมาชิก ✓",
-                                            text_color=theme.SUCCESS)
-                self.member_info_label.configure(
-                    text=f"{name}  •  ชั้น {grade}  •  เลขที่ {number}")
-                self._load_borrowed_books(row[0])
-            else:
-                self.status_label.configure(text="ไม่พบสมาชิกในระบบ",
-                                            text_color=theme.DANGER)
-                self.member_info_label.configure(text="")
-                self._clear_books("ไม่พบสมาชิกในระบบ")
-                show_toast(self, "ไม่พบสมาชิกในระบบ", "red")
-        except Exception as e:
-            logger.error(f"QR decode error: {e}", exc_info=True)
+            ident = member_identity.resolve_decoded(decoded, self.member_repo)
+        except MemberIdentityError as exc:
+            self.status_label.configure(text="สแกนไม่สำเร็จ",
+                                        text_color=theme.DANGER)
+            self.member_info_label.configure(text="")
+            self._clear_books("สแกนไม่สำเร็จ")
+            show_toast(self, str(exc), "red")
+            return
+        except Exception:
+            logger.error("QR decode error", exc_info=True)
+            self.status_label.configure(text="QR Code ไม่ถูกต้อง",
+                                        text_color=theme.DANGER)
+            self.member_info_label.configure(text="")
+            self._clear_books("QR Code ไม่ถูกต้อง")
             show_toast(self, "QR Code ไม่ถูกต้อง", "red")
+            return
+        mid = ident["member_id"]
+        self._current_member = {"id": mid, "name": ident["name"],
+                                "grade": ident["grade"],
+                                "number": ident["number"]}
+        self.status_label.configure(text="พบข้อมูลสมาชิก ✓",
+                                    text_color=theme.SUCCESS)
+        banner = (f"{ident['name']}  •  ชั้น {ident['grade']}"
+                  f"  •  เลขที่ {ident['number']}")
+        self.member_info_label.configure(text=banner)
+        if ident.get("expired"):
+            show_toast(self,
+                       "บัตรสมาชิกหมดอายุแล้ว — ต่ออายุกับผู้ดูแลก่อนคืนหนังสือ"
+                       " (คืนได้ตามปกติ)", "red")
+        self._load_borrowed_books(mid)
 
     # ================= data =================
     def _clear_books(self, msg):

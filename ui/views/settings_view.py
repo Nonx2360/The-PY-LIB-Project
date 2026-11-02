@@ -30,13 +30,16 @@ class SettingsView(ctk.CTkFrame):
         # ---- 2. ยืม-คืน ----
         self._build_loan_settings(page)
 
-        # ---- 3. ข้อมูลโรงเรียน ----
+        # ---- 3. หน้าสมาชิก + QR หมุนเวียน ----
+        self._build_member_portal(page)
+
+        # ---- 4. ข้อมูลโรงเรียน ----
         self._build_school(page)
 
-        # ---- 4. ฐานข้อมูล ----
+        # ---- 5. ฐานข้อมูล ----
         self._build_database(page)
 
-        # ---- 5. เกี่ยวกับ ----
+        # ---- 6. เกี่ยวกับ ----
         self._build_about(page)
 
         # ---- save button ----
@@ -105,7 +108,62 @@ class SettingsView(ctk.CTkFrame):
                 sticky="w", padx=(4, 0), pady=(0, 8))
 
     # ================================================================
-    # 3. school info
+    # 3. member portal (rotating QR identity)
+    # ================================================================
+    def _build_member_portal(self, parent):
+        card = theme.card(parent)
+        card.pack(fill="x", pady=(0, 14))
+        theme.card_title(card, "หน้าสมาชิก + QR หมุนเวียน").pack(
+            anchor="w", padx=18, pady=(16, 10))
+
+        body = ctk.CTkFrame(card, fg_color="transparent")
+        body.pack(fill="x", padx=18, pady=(0, 18))
+
+        self._vars["member_portal_enabled"] = ctk.BooleanVar(
+            value=bool(settings.get("member_portal_enabled")))
+        ctk.CTkCheckBox(
+            body, text="เปิดใช้งานหน้าสมาชิก "
+                       "(เข้าสู่ระบบดูสถานะ + QR ส่วนตัวบนเว็บ)",
+            variable=self._vars["member_portal_enabled"],
+            font=theme.font(13), text_color=theme.text_color()).pack(
+            anchor="w", pady=(0, 4))
+
+        row = ctk.CTkFrame(body, fg_color="transparent")
+        row.pack(fill="x", pady=(6, 0))
+        ctk.CTkLabel(row, text="รอบเปลี่ยน QR (ชั่วโมง 1–72):",
+                     font=theme.font(14, bold=True),
+                     text_color=theme.text_color()).pack(side="left")
+        var_hours = ctk.StringVar(value=str(settings.get("member_qr_rotation_hours")))
+        self._vars["member_qr_rotation_hours"] = var_hours
+        theme.entry(row, placeholder_text="12", width=90,
+                    textvariable=var_hours).pack(side="left", padx=(8, 18))
+        ctk.CTkLabel(row, text="เผื่อรอบข้างเคียง (0–2):",
+                     font=theme.font(14, bold=True),
+                     text_color=theme.text_color()).pack(side="left")
+        var_grace = ctk.StringVar(value=str(settings.get("member_qr_grace_steps")))
+        self._vars["member_qr_grace_steps"] = var_grace
+        theme.entry(row, placeholder_text="1", width=70,
+                    textvariable=var_grace).pack(side="left", padx=(8, 0))
+
+        for hint in [
+            "รอบเปลี่ยน: QR ที่หน้าของสมาชิกใช้ได้ตามช่วงเวลา แล้วเปลี่ยนเอง — แนะนำ 12 ชม.",
+            "เผื่อรอบ: ยอมรับนาฬิกาที่คลาดกันเล็กน้อยระหว่างเครื่องสแกนกับเครื่องแสดง QR",
+        ]:
+            ctk.CTkLabel(body, text=hint, font=theme.font(11),
+                         text_color=theme.muted_color(), anchor="w").pack(
+                anchor="w", pady=(2, 0))
+
+        self._vars["accept_static_card_qr"] = ctk.BooleanVar(
+            value=bool(settings.get("accept_static_card_qr")))
+        ctk.CTkCheckBox(
+            body, text="ยังรับ QR บนบัตรเดิม (แบบไม่หมดอายุ) — "
+                       "เมื่อสมาชิกเปิดใช้งานครบแล้วจึงปิด",
+            variable=self._vars["accept_static_card_qr"],
+            font=theme.font(13), text_color=theme.text_color()).pack(
+            anchor="w", pady=(8, 0))
+
+    # ================================================================
+    # 4. school info
     # ================================================================
     def _build_school(self, parent):
         card = theme.card(parent)
@@ -148,7 +206,7 @@ class SettingsView(ctk.CTkFrame):
             self._vars["school_logo_path"].set(path)
 
     # ================================================================
-    # 4. database
+    # 5. database
     # ================================================================
     def _build_database(self, parent):
         card = theme.card(parent)
@@ -197,7 +255,7 @@ class SettingsView(ctk.CTkFrame):
                 show_toast(self, f"สำรองไม่สำเร็จ: {e}", "red")
 
     # ================================================================
-    # 5. about
+    # 6. about
     # ================================================================
     def _build_about(self, parent):
         card = theme.card(parent)
@@ -247,6 +305,24 @@ class SettingsView(ctk.CTkFrame):
                     settings.set(key, int(raw))
                 except ValueError:
                     pass
+
+            # member portal / rotating QR identity (bounds mirror web UI)
+            settings.set("member_portal_enabled",
+                         bool(self._vars["member_portal_enabled"].get()))
+            for key, lo, hi in (("member_qr_rotation_hours", 1, 72),
+                                ("member_qr_grace_steps", 0, 2)):
+                try:
+                    value = int(self._vars[key].get().strip())
+                except ValueError:
+                    continue
+                if not lo <= value <= hi:
+                    show_toast(self,
+                               f"ค่า {key} ต้องอยู่ในช่วง {lo}–{hi} — ใช้ค่าเดิม",
+                               "amber")
+                    continue
+                settings.set(key, value)
+            settings.set("accept_static_card_qr",
+                         bool(self._vars["accept_static_card_qr"].get()))
 
             settings.save()
             show_toast(self, "บันทึกการตั้งค่าสำเร็จ", "green")

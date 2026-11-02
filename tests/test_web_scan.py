@@ -137,6 +137,69 @@ class TestScanResolve(unittest.TestCase):
         self.assertEqual(resp.status_code, 404)
         self.assertEqual(resp.get_json()["error"], "not_found")
 
+    # ---------------- v3 rotating-ticket scans ----------------
+
+    def _add_member(self, name, grade, number):
+        resp = self.client.post("/members/add", data={
+            "name": name, "grade": grade, "number": number,
+            "csrf_token": self._csrf("/members")})
+        self.assertEqual(resp.status_code, 302)
+        row = harness.query(_env.db_path,
+                            "SELECT id FROM members WHERE number=?",
+                            (number,))
+        self.assertTrue(row)
+        return row[0][0]
+
+    def test_v3_ticket_resolves_to_member(self):
+        mid = self._add_member("อรทัย ตั๋วหมุน", "ม.4/1", "70001")
+        resp = self._scan(security.encrypt_member_ticket(mid, 12))
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["member"]["id"], mid)
+        self.assertEqual(body["member"]["number"], "70001")
+        self.assertFalse(body["member"]["expired"])
+
+    def test_v3_stale_epoch_rejected_as_expired(self):
+        # a ticket from 3 windows back must NOT resolve (grace accepts 1)
+        mid = self._add_member("อรทัย ตั๋วเก่า", "ม.4/1", "70002")
+        stale = security.encrypt_member_ticket(mid, 12,
+                                               epoch=security.ticket_epoch(12) - 3)
+        resp = self._scan(stale)
+        self.assertEqual(resp.status_code, 400)
+        body = resp.get_json()
+        self.assertEqual(body["error"], "expired")
+        self.assertIn("QR หมดเวลา", body["message"])
+
+    def test_v3_future_epoch_beyond_grace_rejected(self):
+        mid = self._add_member("อรทัย นาฬิกาเร็ว", "ม.4/1", "70003")
+        future = security.encrypt_member_ticket(mid, 12,
+                                                epoch=security.ticket_epoch(12) + 3)
+        resp = self._scan(future)
+        self.assertEqual(resp.status_code, 400)
+        self.assertEqual(resp.get_json()["error"], "expired")
+
+    def test_v3_ticket_unknown_member_not_found(self):
+        resp = self._scan(security.encrypt_member_ticket(999999, 12))
+        self.assertEqual(resp.status_code, 404)
+        self.assertEqual(resp.get_json()["error"], "not_found")
+
+    def test_static_cards_off_rejects_card_but_not_tickets(self):
+        from config import settings as settings_mod
+        mid = self._add_member("อรทัย ปิดบัตร", "ม.4/1", "70004")
+        try:
+            settings_mod.set("accept_static_card_qr", False)
+            # printed card QR: policy rejection (never a crash or data leak)
+            resp = self._scan(security.encrypt_qr_data(MEMBER_PAYLOAD))
+            self.assertEqual(resp.status_code, 400)
+            self.assertEqual(resp.get_json()["error"], "invalid")
+            # rotating QR keeps working while static cards are disabled
+            resp = self._scan(security.encrypt_member_ticket(mid, 12))
+            self.assertEqual(resp.status_code, 200)
+            self.assertTrue(resp.get_json()["ok"])
+        finally:
+            settings_mod.set("accept_static_card_qr", True)
+
     def test_unauthenticated_scan_rejected(self):
         self.client.get("/logout")
         resp = self.client.post("/scan/resolve", data={"payload": "zzz"})
