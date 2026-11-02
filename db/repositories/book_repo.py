@@ -78,7 +78,7 @@ class BookRepository(BaseRepository):
 
         def _retire(conn):
             cur = conn.execute(
-                f"UPDATE books SET status = ? WHERE status = ? "
+                f"UPDATE books SET status = ? WHERE status = ? "  # noqa: S608 - {marks} is purely '?' placeholders; every value is bound
                 f"AND id IN ({marks})",
                 ("หยุดให้บริการ", "ว่าง", *ids))
             return cur.rowcount
@@ -94,7 +94,7 @@ class BookRepository(BaseRepository):
 
         def _restore(conn):
             cur = conn.execute(
-                f"UPDATE books SET status = ? WHERE status = ? "
+                f"UPDATE books SET status = ? WHERE status = ? "  # noqa: S608 - {marks} is purely '?' placeholders; every value is bound
                 f"AND id IN ({marks})",
                 ("ว่าง", "หยุดให้บริการ", *ids))
             return cur.rowcount

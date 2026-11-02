@@ -183,7 +183,6 @@ class TestMemberPortal(unittest.TestCase):
         self.assertIn("ไม่ถูกต้องหรือหมดอายุ", resp.get_data(as_text=True))
 
     def test_activation_code_for_activated_member_refused(self):
-        client = self.app.test_client()
         mid, _name, _grade, _number = self._make_member()
         members, token = self.repos, self._csrf(self.admin_client, "/members")
         members.set_pin(mid, "654321")

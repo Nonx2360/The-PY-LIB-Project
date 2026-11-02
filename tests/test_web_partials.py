@@ -165,7 +165,7 @@ class TestWebTableApi(unittest.TestCase):
         self.assertEqual(payload["recordsFiltered"], 1)
 
     def test_api_books_status_filter(self):
-        book1 = self._add_book("PW-300", "กรองสถานะ ว่าง")
+        self._add_book("PW-300", "กรองสถานะ ว่าง")   # stays available
         book2 = self._add_book("PW-301", "กรองสถานะ หยุด")
         resp = self._post(f"/books/{book2[0]}/retire", {})
         self.assertEqual(resp.status_code, 302)

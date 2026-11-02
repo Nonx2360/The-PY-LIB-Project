@@ -17,7 +17,6 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM  # noqa: E402
 from core import security  # noqa: E402
 from services import member_identity  # noqa: E402
 
-import db.repositories.base_repo as base_mod  # noqa: E402
 from config import settings as settings_mod  # noqa: E402
 from db.repositories.member_repo import MemberRepository  # noqa: E402
 

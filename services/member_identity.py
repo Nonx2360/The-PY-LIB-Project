@@ -84,7 +84,9 @@ def resolve_ticket_envelope(raw_payload, repo=None):
     try:
         member_id, epoch = decrypt_member_ticket(raw_payload)
     except ValueError:
-        raise MemberIdentityError("QR ไม่ถูกต้อง (ระบบเปิดไม่ได้หรือคีย์ไม่ตรง)")
+        # the lower-layer message may reference payload content — suppress it
+        raise MemberIdentityError(
+            "QR ไม่ถูกต้อง (ระบบเปิดไม่ได้หรือคีย์ไม่ตรง)") from None
     return _member_context(member_id, epoch, repo)
 
 
@@ -115,7 +117,9 @@ def resolve_scanned(raw_payload, repo=None):
     try:
         plaintext = decrypt_qr_data(raw)
     except ValueError:
-        raise MemberIdentityError("QR ไม่ถูกต้อง (ระบบเปิดไม่ได้หรือคีย์ไม่ตรง)")
+        # the lower-layer message may reference payload content — suppress it
+        raise MemberIdentityError(
+            "QR ไม่ถูกต้อง (ระบบเปิดไม่ได้หรือคีย์ไม่ตรง)") from None
     return resolve_badge(plaintext, repo)
 
 
@@ -133,7 +137,9 @@ def resolve_decoded(decoded_text, repo=None):
         try:
             member_id, epoch = parse_ticket_json(text)
         except ValueError:
-            raise MemberIdentityError("QR ไม่ถูกต้อง (ข้อมูลโค้ดเสียหาย)")
+            # the lower-layer message may reference payload content — suppress it
+            raise MemberIdentityError(
+                "QR ไม่ถูกต้อง (ข้อมูลโค้ดเสียหาย)") from None
         return _member_context(member_id, epoch, repo)
     return resolve_badge(text, repo)
 

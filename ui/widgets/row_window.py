@@ -13,7 +13,7 @@
 import customtkinter as ctk
 
 import ui.theme as theme
-from ui.paging import (INITIAL_ROWS, STEP_ROWS, HARD_CAP,
+from ui.paging import (INITIAL_ROWS, STEP_ROWS,
                        visible_slice, next_limit, reached_cap)
 
 

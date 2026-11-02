@@ -157,7 +157,7 @@ def ticket_epoch(rotation_hours: int, now=None) -> int:
     so changing the period simply invalidates QRs issued before the change
     fell out of the ±grace window.
     """
-    from datetime import datetime, timezone
+    from datetime import datetime
     if now is None:
         now = datetime.now()
     seconds = max(1, int(round(rotation_hours))) * 3600

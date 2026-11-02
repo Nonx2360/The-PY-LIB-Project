@@ -1,18 +1,21 @@
 # THE PY-LIB — Python >= 3.10
 # Pinned to versions verified against this codebase on Windows / Python 3.10.
 # Excel (.xlsx) I/O needs openpyxl; PDF viewing needs pymupdf.
+# Pillow: the 13.x CVE fixes require Python >= 3.11, so 3.11+ environments
+# (CI) get 13.0.0 while Windows / 3.10 deployments get the newest 3.10 build.
 customtkinter==5.2.2
-Pillow==10.4.0
+Pillow==12.3.0; python_version < "3.11"
+Pillow==13.0.0; python_version >= "3.11"
 qrcode==7.4.2
 packaging==23.2
 opencv-python==5.0.0.93
 numpy==2.2.6
 pyzbar==0.1.9
 bcrypt==4.0.1
-cryptography==49.0.0
-python-dotenv==1.0.0
+cryptography==50.0.0
+python-dotenv==1.2.2
 reportlab==4.4.10
 pandas==2.3.3
 openpyxl==3.1.5
 pymupdf==1.28.2
-flask==3.1.1
+flask==3.1.3

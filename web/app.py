@@ -21,7 +21,6 @@ from db.repositories.borrow_repo import BorrowRepository, BorrowError
 from db.repositories.access_repo import AccessRepository
 from db.repositories.admin_repo import AdminRepository
 from services.excel_service import ExcelService
-from services.excel_service import MAX_ROWS as IMPORT_MAX_ROWS
 from services.qr_service import QRService
 from services.pdf_service import PDFService
 from core.logger import logger
@@ -304,10 +303,11 @@ def create_app():
         filtered row count (e.g. a bulk delete emptied the current page) the
         page is clamped back to the last one instead of showing nothing.
         """
-        total = repo.fetchone(f"SELECT COUNT(*) FROM {base}")[0]
+        total = repo.fetchone(f"SELECT COUNT(*) FROM {base}")[0]  # noqa: S608 - base is a fixed table-name literal
         where_sql = f" WHERE {where}" if where else ""
         filtered = repo.fetchone(
-            f"SELECT COUNT(*) FROM {base}{where_sql}", tuple(params))[0]
+            f"SELECT COUNT(*) FROM {base}{where_sql}",  # noqa: S608 - base/where are caller-fixed literals; user input is always bound
+            tuple(params))[0]
         order_col = min(dt["order_col"], len(columns) - 1)
         order_sql = columns[order_col][0]
         start = dt["start"]
@@ -655,7 +655,7 @@ def create_app():
         pin_expr = "(CASE WHEN pin_hash IS NULL THEN 0 ELSE 1 END)"
         return _dt_response(
             dt, member_repo, base, where, params,
-            "SELECT id, name, grade, number, register_date, expire_date, "
+            "SELECT id, name, grade, number, register_date, expire_date, "  # noqa: S608 - pin_expr is a fixed CASE literal from the allowlisted columns below
             f"qrcode_path, {pin_expr} FROM members",
             [("id", "id"), ("name", "name"), ("grade", "grade"),
              ("number", "number"), ("register_date", "register_date"),
