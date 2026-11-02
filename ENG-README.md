@@ -1,120 +1,266 @@
-# THE PY-LIB — Smart Library System
+<div align="center">
 
-**THE PY-LIB** is a library management system developed with Python (CustomTkinter + Flask + SQLite), focusing on security, convenience, and practical use in schools or educational institutions. Supports both desktop app and website.
+# THE PY-LIB
 
----
+**A complete school-library management system — desktop app, staff web UI, and a self-service member portal**
+AES-256-GCM encrypted identity QR (including time-limited rotating tickets) • atomic borrowing • 193 tests + CI
 
-## Key Features
+[![CI](https://github.com/Nonx2360/The-PY-LIB-Project/actions/workflows/ci.yml/badge.svg)](https://github.com/Nonx2360/The-PY-LIB-Project/actions/workflows/ci.yml)
+![Python](https://img.shields.io/badge/Python-3.10%2B-306998?logo=python&logoColor=FFD43B)
+![Platform](https://img.shields.io/badge/Desktop-Windows%2010%2B-0078D6?logo=windows&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-193%20passing-2EA44F)
+![License](https://img.shields.io/badge/license-MIT-8A6BE8)
 
-### Desktop App
-- Modular GUI (separated config / core / db / services / ui layers)
-- QR Code scanning via webcam camera for borrowing/returning and check-in/check-out logging
-- Atomic transaction borrow/return — prevents double-borrowing / stale data from errors
-- Shows overdue return status with warning colors (green / yellow / red)
-- Retire / restore book status while keeping borrow history
-- Bulk management on books and members pages: select multiple items then retire / restore / delete together (items with history or currently borrowed are automatically skipped, with "Success X / Skipped Y" summary)
-- Export member cards PDF, borrow/return history, access history with Thai font (Sarabun)
-- Import/export books from Excel files (pandas + openpyxl) — import 1,000+ books per batch (single transaction, works in background, window doesn't freeze)
-- List tables open in chunks (first 50 items + show more button) — 1,000+ book catalog opens immediately without excessive Windows resource usage (prevents Tk crashes)
-- Modern UI, supports light/dark theme, Sidebar with Grouped Navigation
-- Toast notifications, Confirm dialogs, Shared scan window
-- Built-in PDF viewer (PyMuPDF) for viewing member cards
-- Backups (SQLite backup + checksum) used before important changes
-### Website (Flask Web UI)
-- Enable from sidebar menu "Web UI" in desktop app or run separately
-- Desktop-equivalent features: members, books, borrow/return, history, settings
-- Check-in/check-out via web (automatic toggle in/out)
-- Scan member cards from web browser camera (jsQR vendored) — decoded server-side only
-- Retire/restore and permanent delete in 2 steps (retire → purge) with safe storage
-- Import books from Excel online on web (max 5,000 rows/file) with template download — duplicate codes/incomplete rows are skipped and results reported
-- Bulk management on web equivalent to desktop: select multiple books/members then command simultaneously (max 200 items/time)
-  - Books: retire / restore / delete — books currently borrowed or with history still active are automatically skipped (retired books are deleted together with borrow history)
-  - Members: bulk delete — members with borrow history/access history are skipped to maintain data integrity
-  - Every action through confirmation dialog + "Success X / Skipped Y" report and count-only logs (no personal data recorded)
-- Books/members/history tables (web) are **server-side jQuery DataTables** (search/sort/paginate server-side, ~50 rows/page, Thai interface) — 1,000+ book catalog opens fast always
-- SVG icons (Lucide), School logo, search/filter on main tables — books, members, and history (other pages use forms/field selectors according to context)
-- Member cards and PDF reports are desktop-only features (web does not yet open PDF creation routes)
-- Responsive design, supports Light/Dark mode
-- Frontend stack vendored locally (works even without internet) — see `web/static/vendor/README.md`:
-  - **SweetAlert2** — confirmation/alert boxes themed with the system, flash messages as toast
-  - **jQuery + DataTables** — books/members/history tables search/filter (code/name/status)/sort/paginate server-side via `/api/{books,members,history}` with bulk bar on books/members pages and hand-made Thai i18n file
-  - Web fonts **Sarabun + Prompt** (OFL license) pinned in `web/static/fonts/` via `@font-face` — no more Google Fonts calls, every page including login works fully offline
-  - **Alpine.js** — locks borrow page status (pending send/complete count) evaluated instantly in browser
-  - **Chart.js** — dashboard: borrowings last 14 days, check-ins last 7 days, book status distribution (`/api/analytics`)
-  - **Flatpickr (th)** — calendar for due date selection with quick buttons 7/14/21/30 days
-- Load order: sweetalert2 → ui.js → [jquery + datatables + tables.js] → alpine (important, do not swap)
-### Member Portal
-- Members log in with **class + number + self-set PIN** (bcrypt stores hash only) — sees only their own data
-- Read-only status page: currently borrowed books + due dates (overdue/today badges), latest returns, library access history — no borrow/return buttons, all borrow/return still done at counter
-- **Rotating QR (v3 ticket)**: Member page shows personal QR that changes automatically per time cycle (admin sets 1–72 hours + neighboring cycle allowance 0–2) — QR from card photo cannot be reused when cycle changes
-- First-time identity confirmation 2 methods: scan your own card with camera or one-time activation code from admin (displayed on screen once, SHA-256 hash stored in database, expires 15 minutes)
-- Admin can reset member PIN (desktop/web) — pending activation codes are cancelled together, member must re-verify identity
-- Enable/disable member page system-wide from settings (disabled → /member returns 404) and choose whether to still accept QR on traditional plastic cards
-- Member session separate from admin different key — two-side logins don't interfere, limit failed logins 5 times/15 minutes (per IP+class+number), error messages cannot be tampered to say "no such member"
-
-### Security
-- QR data encrypted AEAD **AES-256-GCM (`v2:`)** and still decrypts old cards via AES-256-CBC strictly (strict legacy fallback)
-- **Rotating QR ticket (`v3:`)**: AES-256-GCM + AAD protocol-bound ("pylib-member-ticket-v3") — each cycle ticket time-limited, server-side decode only, small payload (easy scan) and rejects extra/incorrect-type JSON
-- PBKDF2 key derivation (100k iterations) for QR encryption key
-- Admin passwords hashed with bcrypt — no default password and timing-equalized verification
-- Limits failed logins (5 times / 15 minutes per user) both web and desktop
-- CSRF token on every POST form and session cookie (HttpOnly/SameSite=Lax)
-- Parameterized queries prevent SQL Injection everywhere
-- Thread-safe database access (connection-per-query + Lock) and FK enforcement enabled on every connection
-- Secret migration via `PRAGMA user_version` per schema version
-- Secrets stored in `.env` (gitignored) — auto-generated randomly on first run
+</div>
 
 ---
 
-## Installation and Usage
+THE PY-LIB is a library platform built for a real school media center: staff run members, books and circulations from a desktop app or a web UI, while students get a **member portal** where they check their own loans and display a **rotating, time-limited QR identity** instead of relying on one static plastic card forever. Every layer — cryptography, permissions, transactions — is designed together and covered by a security-regression suite that runs in CI.
 
-### Install Python
+## Contents
 
-Requires Python >= 3.10
+- [Architecture & permissions](#architecture--permissions)
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Member account lifecycle](#member-account-lifecycle)
+- [Configuration](#configuration)
+- [HTTP endpoints](#http-endpoints)
+- [Operations](#operations)
+- [Security model](#security-model)
+- [Database](#database)
+- [Testing & CI](#testing--ci)
+- [Project structure](#project-structure)
+- [Dependencies](#dependencies)
+- [Roadmap](#roadmap)
+- [Contributing](#contributing)
+- [Team & license](#team--license)
 
-### Create Virtual Environment and Install Dependencies
+---
+
+## Architecture & permissions
+
+```
+                         ┌─────────────────────────────────────┐
+                         │  Desktop app (Tk/customtkinter)     │
+                         │  members • books • circulations     │
+                         │  access log • history • settings    │
+                         └──────────────┬──────────────────────┘
+                                        │ shares db/ + service layers
+┌────────────────────────┐    ┌─────────▼──────────────────────┐    ┌────────────────────────┐
+│  Staff web UI (Flask)  │    │  shared core                   │    │  Member portal (web)   │
+│  server-side tables    ├───►│  db/repositories (atomic)      │◄───│  PIN login (bcrypt)    │
+│  jsQR → /scan/resolve  │    │  services/qr + member_identity │    │  own status only       │
+│  bulk + analytics      │    │  core/security (AES-GCM)       │    │  rotating v3 ticket    │
+└────────────────────────┘    │  config/settings + .env        │    └────────────────────────┘
+                              └─────────┬──────────────────────┘
+                                        │
+                              ┌─────────▼─────────┐
+                              │   SQLite (db/)    │
+                              └───────────────────┘  user_version v1→v4, automatic
+```
+
+**Permission matrix** — every page says unmistakably who may see it:
+
+| Capability | Admin (desktop) | Admin (web) | Member (portal) |
+|---|:---:|:---:|:---:|
+| Members + books CRUD, bulk operations | ✓ | ✓ | ✗ |
+| Borrow • return • access check-in/out | ✓ | ✓ | ✗ |
+| Issue activation codes / clear member PINs | ✓ | ✓ | ✗ |
+| System settings (incl. portal on/off) | ✓ | ✓ | ✗ |
+| See own status + own rotating QR | — | — | ✓ |
+
+The admin and member sessions live in separate cookie keys — logging into one side grants nothing on the other, and both walls are covered by dedicated tests.
+
+## Features
+
+### Desktop app (staff)
+
+- **Encrypted QR identities** — webcam scanning for borrow, return and check-in/out; decoding happens on-device only, keyed from `.env`
+- **Atomic circulation** — one `BEGIN IMMEDIATE` transaction per borrow/return: the book status flip is a conditional UPDATE (one winner per copy even if two stations scan simultaneously) and mid-operation failures leave no half-written state
+- **Bulk management** — select many books/members, then retire / restore / delete together; rows with history are skipped automatically with a "Success X / Skipped Y" summary
+- **Excel import** — 1,000+ rows per batch in a single transaction running in the background; the window stays responsive
+- **Chunked list windows** — a 1,000+ item catalog opens immediately without crashing Tk
+- **Documents** — member card PDFs and borrow/return/access reports in Thai (Sarabun), with an in-app PDF viewer
+- **Backups** — SQLite online backup + integrity/foreign-key verification before major changes
+- Light/dark theme, toasts, confirm dialogs, one shared scan window
+
+### Staff web UI (Flask)
+
+- Desktop-parity modules: members, books, borrow/return, history, access, settings — launched from the app or standalone (bound to `127.0.0.1` by default)
+- **Server-side DataTables** (vendored jQuery + DataTables): search/sort/paginate ~50 rows/page at the server — catalogs in the thousands stay fast
+- **Two-stage destructive flow** — retire first, delete-purge afterward; history integrity is always preserved
+- Web Excel import up to 5,000 rows/file with a downloadable template and per-row skip reporting
+- Chart.js dashboard (14-day circulations, 7-day access, book status split)
+- **Fully offline** — every frontend library (SweetAlert2, jQuery + DataTables, Alpine.js, Chart.js, Flatpickr) and the Sarabun/Prompt fonts are pinned in the repo; zero CDN calls
+
+### Member portal
+
+- **Self-service login** with class + number + self-set PIN (only the bcrypt hash is stored)
+- **Read-only status page**: current loans + due dates (overdue/due-today badges), recent returns, access history — there are no borrow/return actions; circulation stays at the desk
+- **Rotating QR (v3 ticket)** — the member's page shows a personal QR that re-issues itself every time window (admin sets 1–72 h, plus 0–2 grace windows); a photo of yesterday's QR is useless when the window flips
+- **Two-step first activation** — verify with your own printed card or an admin-issued one-time code, then set a PIN within a 10-minute window
+- **Central control** — the whole portal can be switched off (`/member*` → 404) and static plastic-card QRs can be retired independently
+- Login throttled to 5 failures / 15 min per (IP + class + number); error replies never reveal whether an account exists
+
+## Quick start
+
+**Requirements:** Python **3.10+** (the pinned dependency set is verified on Windows / Python 3.10; CI runs on 3.11) — the desktop app targets **Windows 10+** (OpenCV + pyzbar for scanning)
 
 ```bash
+# 1) environment + dependencies (or run req.bat)
 python -m venv venv
-venv\Scripts\activate        # Windows
+venv\Scripts\activate
 pip install -r requirements.txt
+
+# 2) start the desktop app
+python main.py            # add --debug to write debug.log
 ```
 
-Supports using `req.bat` for automatic dependencies installation
+**The first boot hardens itself:** there is no default password — a random one is generated, printed to the console **once**, and saved to `db/INITIAL_ADMIN_PASSWORD.txt` (gitignored; treat it as a secret). On every boot, any account still holding the historic `admin123` is replaced automatically.
 
-### Run Desktop App
-
-```bash
-python main.py              # normal mode
-python main.py --debug      # debug mode (log to debug.log)
-```
-
-Default: no default password anymore — first boot will **create a random password** shown on console screen only once and saved at `db/INITIAL_ADMIN_PASSWORD.txt` (not tracked in Git). If old default password (`admin123`) is detected in old database, system will change to new password automatically every boot.
-
-> Login throttling: more than 5 failed logins within 15 minutes (per username) must wait until time limit, both web page and desktop
-
-### Run Website
-
-Open desktop app → menu "More" → "Web UI" → press "Start Web UI"
-
-Or run separately (bound to this machine only 127.0.0.1):
+**Web UI:** the desktop app's "เพิ่มเติม" (More) menu → "Web UI" → "Start Web UI", or run standalone:
 
 ```bash
 venv\Scripts\python -c "from web.app import create_app; create_app().run(port=5000)"
 ```
 
-Open browser to `http://127.0.0.1:5000`
+Open `http://127.0.0.1:5000`. Exposing it on a LAN requires HTTPS in front — see [Operations](#operations).
 
-> Security: web authenticates with session cookie (HttpOnly/SameSite=Lax), CSRF token on every POST form, limits failed logins (5 times/15 minutes) and does not record personal data
-> Web logging is bound to `127.0.0.1` by default — to open on LAN see HTTPS steps at `docs/SECURITY.md` and change `webui_host` value on settings page
+**Secrets:** `.env` (gitignored) is auto-generated on first boot and must travel *with* the database — always move them as one set. See [Security model](#security-model).
 
-> QR keys: `.env` file stores `SECRET_PASSPHRASE` / `SECRET_SALT` / `FLASK_SECRET_KEY` (gitignored; auto-generated on first run, keep it secure) New QR data format uses AES-256-GCM (`v2:`) key rotation/migration/recovery — read `docs/SECURITY.md`
+> Browser cameras are only available over `localhost` or HTTPS (a getUserMedia security requirement).
 
-> Member card scan on web: web browser camera must be opened via HTTPS (except localhost) See HTTPS deployment details at `docs/SECURITY.md` § deployment
+## Member account lifecycle
 
----
+| Step | Actor | Details and limits |
+|---|---|---|
+| 1 · Register | Admin | Add the member → the system issues an encrypted static card QR (v2) plus a printable PDF card |
+| 2 · First activation | The member | At `/member/activate`: scan **your own card** or enter an admin one-time code (SHA-256 at rest, 15-minute expiry, shown once on screen) · then set a 6–64 character PIN within 10 minutes · accounts that already have a PIN refuse re-activation on every path |
+| 3 · Daily use | Member | Log in with class + number + PIN → view own status and show the rotating QR (rate-limited to 30 images/min) |
+| 4 · At the desk | Librarian | Scan the current-window QR (or a static card, if still accepted) → borrow / return / check in-out; web and desktop scanners run the identical policy |
+| 5 · Reset | Admin | **Clear PIN** (burns any outstanding codes in the same transaction) → the member must re-verify with the physical card |
 
-## Project Structure
+Key design point: the system **cannot** activate a member portal account *for* the student — access only exists after the member personally completes step 2, and picking up someone else's code never grants their account (codes bind to their owner).
+
+## Configuration
+
+All of these live under "Settings" (desktop and web share the same store — `config/settings.json`):
+
+| Option | Description | Default |
+|---|---|---|
+| Theme | System / Light / Dark | System |
+| Default loan period | Borrow duration (clamped 1–90 days) | 7 days |
+| Max books per member | Concurrent-loan limit (clamped 1–20) | 3 books |
+| Member card validity | Days before expiry (clamped 1–3,650) | 365 days |
+| School name | Shown on cards and pages | DSNPRU |
+| School logo | PNG for cards and the sidebar | `assets/logos/school_logo.png` |
+| Web UI host | `127.0.0.1` (loopback) or `0.0.0.0` (LAN + HTTPS) | `127.0.0.1` |
+| Enable member portal | Off = every `/member*` route answers 404 | Enabled |
+| Member QR rotation window | Length of one v3 ticket window (clamped 1–72 h) | 12 hours |
+| Grace windows | Extra accepted windows for clock skew (clamped 0–2) | 1 window |
+| Accept static card QR | Still accept no-expiry plastic/paper QRs — turn off once members are activated | Enabled |
+
+Numeric inputs are always clamped server-side (the form `min`/`max` are UX only), and the settings page posts two independent groups (general vs. member_portal) so an unchecked box can never wipe the other group's values.
+
+## HTTP endpoints
+
+| Zone | Routes | Methods | Role |
+|---|---|---|---|
+| Auth | `/login`, `/logout` | GET/POST, GET | Admin |
+| Admin pages | `/`, `/members`, `/books`, `/borrow`, `/return`, `/history`, `/access`, `/settings` | GET | Admin |
+| Table APIs | `/api/members`, `/api/books`, `/api/history`, `/api/stats`, `/api/analytics` | GET | Admin |
+| Admin writes | `/members/add`, `/members/<id>/delete`, `/members/<id>/activation-code`, `/members/<id>/reset-pin`, `/members/bulk`, `/books/add`, `/books/import`, `/books/template`, `/books/<id>/delete`, `/books/<id>/retire`, `/books/<id>/restore`, `/books/bulk` | POST | Admin |
+| Scanning | `/scan/resolve` | POST | Admin (all QR formats decode server-side) |
+| Access log | `/access/record` | POST | Admin |
+| Member portal | `/member/login`, `/member/logout`, `/member`, `/member/qr.png`, `/member/activate`, `/member/activate/scan`, `/member/activate/code`, `/member/activate/set-pin` | GET/POST | Member (session separate from admin) |
+| Assets | `/assets/<path>` | GET | — |
+
+Every POST requires a CSRF token (in the form or via the `X-CSRF-Token` header), and role-gated routes answer 302 to the appropriate login when the session lacks rights.
+
+## Operations
+
+**Backup / restore** — normally via desktop Settings, or the CLI:
+
+```bash
+# backup (SQLite online backup — safe while the server is running) + verify
+venv\Scripts\python -c "from services.backup_service import create_backup, verify_backup; p = create_backup(); print(verify_backup(p), p)"
+
+# restore (refuses unverified files; atomically replaces the live DB)
+venv\Scripts\python -c "from services.backup_service import restore_backup; restore_backup(r'backups\library_backup_YYYYMMDD_HHMMSS.db')"
+```
+
+**Rotate QR keys** — if the key may have leaked, or you are migrating machines, the bundled tool rotates without losing any issued card:
+
+```bash
+venv\Scripts\python tools\rotate_qr_key.py [--no-cards]   # backup → decrypt → re-encrypt everything as v2
+venv\Scripts\python tools\regenerate_member_cards.py      # rebuild card PDFs from the current database
+```
+
+After rotating: distribute the new `.env` to every machine **before** the next boot, and always migrate machines as the set (`.env` + `db/` + `assets/`) together.
+
+**LAN / HTTPS** — put a reverse proxy in front to terminate TLS, then set `webui_host = 0.0.0.0` and enable `SESSION_COOKIE_SECURE`. Full steps: `docs/SECURITY.md` § 9.
+
+**Common issues quick check:**
+
+| Symptom | Where to look |
+|---|---|
+| Web camera unavailable | must be `localhost` or HTTPS; grant camera permission in the browser |
+| Member login returns 429 | 5 failures / 15 min per identity set — wait it out, or have an admin clear the PIN |
+| Old cards fail to decode everywhere | `.env` mismatch between machines — move them as one set or run `tools/rotate_qr_key.py` |
+| All member pages 404 | someone disabled "Enable member portal" in Settings |
+| Web tables slow or empty | check migrations ran (`PRAGMA user_version` = 4) and that `/api/*` returns data |
+| Forgot the admin password | open `db/INITIAL_ADMIN_PASSWORD.txt`; further cases in `docs/SECURITY.md` |
+
+## Security model
+
+| Area | Approach |
+|---|---|
+| QR identity | **v2** — static card, `AES-256-GCM` (12-byte nonce + forgery-proof tag) · **v3** — rotating ticket, `AES-256-GCM` with protocol-binding AAD (`pylib-member-ticket-v3`), strict-field/strict-type JSON body (`{"m": id, "e": epoch}`) · **v1 legacy** — AES-CBC, read-only and decoded strictly (full PKCS7 + UTF-8) — **no plaintext fallback**, malformed input is rejected outright |
+| Ticket time window | `epoch = floor(unix_time / window)` — the server accepts only the current window plus grace windows, and the design is **stateless** (nothing persists anywhere) |
+| Key derivation | PBKDF2-HMAC-SHA256, 100,000 iterations, over `SECRET_PASSPHRASE` + `SECRET_SALT` (auto-generated; placeholder values are always replaced) |
+| Admin passwords | bcrypt with no default — first boot prints a random one once; timing-equalized verification; `admin123` is retired automatically on every boot |
+| Member PIN | bcrypt in `members.pin_hash` (NULL until the member activates); activation is a single transaction (code claim + PIN set + a `pin_hash IS NULL` guard against takeover) |
+| Activation codes | SHA-256 hash at rest, 15-minute expiry, single atomic use, shown on screen exactly once — the plaintext is never persisted |
+| Login throttling | 5 failures / 15 min in independent scopes: admin (IP + username), member (IP + class + number) |
+| Web sessions | HttpOnly + SameSite=Lax cookie, 4-hour lifetime, CSRF token on every POST (constant-time compare), failure messages prevent user enumeration |
+| Blast radius | the portal reads only the member's own rows and has no data-mutating routes at all; the whole domain can be disabled with one switch |
+| Data integrity | FKs on every connection, `books.code UNIQUE`, `borrow_log.returned CHECK (0,1)`, borrow/return as one `BEGIN IMMEDIATE` transaction, parameterized SQL everywhere |
+| Migrations | `PRAGMA user_version` v1→v4 (constraints → bulk-import indexes → member portal: pin_hash + activation codes) — idempotent, run at every boot |
+| Logging | no personal data is ever logged (ids and counts only); failed payloads reply with outcomes, never echoing contents |
+
+The full operational reference (every payload format, the key-rotation runbook, HTTPS deployment, the security test matrix): [`docs/SECURITY.md`](docs/SECURITY.md)
+
+## Database
+
+One SQLite file (`db/library.db`) — structure is managed by versioned migrations:
+
+| Table | Contents |
+|---|---|
+| `admin_users` | Admin accounts (bcrypt, no default password) |
+| `members` | Name, class, number, QR, expiry, **`pin_hash`** (v4 — NULL until the member activates); class+number badge must be unique |
+| `books` | Code (**UNIQUE**), title, status `ว่าง` (available) / `ยืมแล้ว` (borrowed) / `หยุดให้บริการ` (retired) |
+| `borrow_log` | Circulation records — `returned CHECK (0,1)`, FKs to members/books, bulk indexes (v3) |
+| `access_log` | Library entry/exit records |
+| `member_activation_codes` | (v4) SHA-256 hashes of one-time activation codes, 15-minute expiry, `code_hash UNIQUE`, `used_at` burn timestamp |
+
+## Testing & CI
+
+```bash
+venv\Scripts\python -m unittest discover -s tests        # Windows
+venv/bin/python -m unittest discover -s tests            # Linux/Mac
+```
+
+**193 test cases across 18 files** — crypto (v1/v2/v3), the member-identity resolver, the full member-portal flow, repositories and atomic circulation, migrations v1→v4, backup/restore, bulk + Excel import, server-side table APIs, web guards (CSRF/throttle/sessions/permissions) and offline-safety.
+
+CI (GitHub Actions) runs three independent jobs on every push/PR:
+
+| Job | What it does |
+|---|---|
+| `tests + lint` | the entire unittest suite + `ruff check` (configured in `pyproject.toml`, including bandit rules) |
+| `pip-audit` | CVE scan of the installed dependency set |
+| `gitleaks` | committed-secret detection |
+
+## Project structure
 
 ```
 THE-PY-LIB/
@@ -130,7 +276,7 @@ THE-PY-LIB/
 │   ├── security.py              # bcrypt hash/verify, AES-GCM `v2:` badges + `v3:` rotating tickets + legacy AES-CBC (PBKDF2)
 │   ├── logger.py                # logging config (debug.log support)
 │   └── throttle.py              # Sliding-window login lockout (desktop + web)
-├── db/
+├── db/                          # (runtime artifacts: library.db, INITIAL_ADMIN_PASSWORD.txt — gitignored)
 │   ├── schema.py                # CREATE TABLE + user_version migrations (v1→v4) + admin bootstrap
 │   └── repositories/
 │       ├── base_repo.py         # Thread-safe SQLite (per-query connection + Lock)
@@ -141,7 +287,7 @@ THE-PY-LIB/
 │       └── admin_repo.py        # admin_users + timing-equalized verify_credentials
 ├── services/
 │   ├── qr_service.py            # Create/decode QR (AES)
-│   ├── member_identity.py       # Single resolver for all QR types (v3 ticket/v2 card/legacy) + time window policy
+│   ├── member_identity.py       # Single resolver for all QR types (v3 ticket / v2 card / legacy) + time-window policy
 │   ├── pdf_service.py           # Member card PDF + reports
 │   ├── camera_service.py        # Camera + QR decode
 │   ├── excel_service.py         # Import/Export Excel
@@ -152,7 +298,7 @@ THE-PY-LIB/
 │   ├── views/
 │   │   ├── login_view.py        # Split-panel login + throttling
 │   │   ├── dashboard_view.py    # Stat cards + action tiles
-│   │   ├── member_view.py       # Two-column: form + searchable list
+│   │   ├── member_view.py       # Two-column: form + searchable list, PIN tools
 │   │   ├── book_view.py         # Two-column: form + searchable list, retire/restore
 │   │   ├── borrow_view.py       # 3-step flow (scan → book → confirm)
 │   │   ├── return_view.py       # Scan + borrowed list + return
@@ -166,34 +312,35 @@ THE-PY-LIB/
 │       ├── scan_window.py       # Shared camera QR scan window
 │       └── pdf_viewer.py        # Built-in PDF viewer (PyMuPDF)
 ├── web/
-│   ├── app.py                   # Flask web application (routes, guards, DataTables /api feeds, bulk endpoints, /api/analytics, Excel import)
+│   ├── app.py                   # Flask app: routes, guards, DataTables /api feeds, bulk, analytics, member portal, Excel import
 │   ├── csrf.py                  # Per-session CSRF tokens (form field or X-CSRF-Token header)
 │   ├── static/
 │   │   ├── style.css            # Web UI design system
 │   │   ├── vendor/              # Vendored JS libs, pinned versions (see README.md inside)
 │   │   │   ├── alpine.min.js    # Alpine.js 3.17.5
 │   │   │   ├── jquery.min.js    # jQuery 3.7.1
-│   │   │   ├── datatables.min.js# DataTables 1.13.8 (server-side tables)
+│   │   │   ├── datatables.min.js # DataTables 1.13.8 (server-side tables)
 │   │   │   ├── sweetalert2.min.js/.css  # SweetAlert2 11.26.25
 │   │   │   ├── chart.umd.min.js # Chart.js 4.6.1
-│   │   │   └── flatpickr.min.*
+│   │   │   ├── flatpickr.min.*  # Flatpickr 4.6.13 + Thai locale (th)
+│   │   │   └── htmx.min.js      # htmx 2.0.11 (retained, currently unused)
 │   │   ├── fonts/               # Sarabun + Prompt TTFs (OFL) — @font-face in style.css, offline
 │   │   ├── lang/
 │   │   │   └── datatables-th.json # hand-made Thai i18n for DataTables
 │   │   └── js/
 │   │       ├── jsQR.js          # Vendored jsQR (in-browser QR decode)
 │   │       ├── scan.js          # Camera capture + /scan/resolve calls
-│   │       ├── member_scan.js   # Card scan camera on member activation page
-│   │       ├── member_qr.js     # Countdown timer + switch QR when cycle changes
+│   │       ├── member_scan.js   # Card-scan camera on the member activation page
+│   │       ├── member_qr.js     # Countdown + QR swap when the window flips
 │   │       ├── tables.js        # DataTables configs (books/members/history) + bulk bar
 │   │       └── ui.js            # PyLib helpers: dialogs, toasts, data-confirm, flatpickr init
 │   └── templates/
 │       ├── icons.svg            # Lucide SVG icon sprite
 │       ├── base.html            # Layout + sidebar + vendor stack wiring
 │       ├── login.html           # Login page
-│       ├── member_base.html     # Member page (separate shell, no admin menu)
-│       ├── member_login.html    # Member login (class+number+PIN)
-│       ├── member_activate.html # First-time activation (scan card or admin code) + set PIN
+│       ├── member_base.html     # Member pages (standalone shell, no admin nav)
+│       ├── member_login.html    # Member login (class + number + PIN)
+│       ├── member_activate.html # First activation (scan card or admin code) + set PIN
 │       ├── member_portal.html   # Own status + rotating QR with countdown
 │       ├── index.html           # Dashboard + Chart.js widgets
 │       ├── members.html         # Member management
@@ -206,156 +353,69 @@ THE-PY-LIB/
 ├── tools/
 │   ├── rotate_qr_key.py         # Key rotation: backup → decrypt → re-encrypt
 │   └── regenerate_member_cards.py
-├── tests/
-│   ├── _harness.py              # Temp-DB/env isolation for tests
-│   ├── test_security.py         # Password hashing + QR crypto
-│   ├── test_qr_security.py      # QR payload formats & rejection paths
-│   ├── test_migrations.py       # Schema v1→v4 upgrades + book-code dedupe + fresh layout
-│   ├── test_desktop_paging.py   # Capped list-window math (large catalog guard)
-│   ├── test_member_repo.py      # Member CRUD + PIN/activation-code methods
-│   ├── test_rotating_tickets.py # `v3:` ticket crypto, window math, identity dispatch
-│   ├── test_member_portal.py    # Member portal: activation, login, portal, admin PIN reset
-│   ├── test_book_repo.py        # Book CRUD
-│   ├── test_borrow_atomic.py    # Atomic borrow/return invariants
-│   ├── test_admin_bootstrap.py  # No-default-password bootstrap
-│   ├── test_backup_restore.py   # Backup + verify
-│   ├── test_web_security.py     # CSRF/throttle/session
-│   ├── test_web_scan.py         # Badge scanner endpoint
-│   ├── test_web_delete_guards.py# History-bearing delete refusals
-│   ├── test_web_book_retire.py  # Retire/restore/purge flow
-│   ├── test_web_bulk.py         # 1000-row Excel import + DataTables APIs + bulk endpoints (cap/CSRF/skip counts)
-│   ├── test_web_partials.py     # List-table skeleton/page APIs + header CSRF + analytics
-│   └── test_web_pages_smoke.py  # Every authenticated page renders 200
+├── tests/                       # _harness.py + 18 test files (see Testing & CI)
 ├── docs/
-│   ├── SECURITY.md              # Security runbook (key rotation, HTTPS/LAN)
+│   ├── SECURITY.md              # Security runbook (key rotation, HTTPS/LAN, payload formats)
 │   └── DESIGN.md                # Visual design system notes
 ├── assets/
 │   ├── fonts/                   # Sarabun + Prompt TTFs (desktop PDFs + copied to web/static/fonts)
 │   ├── logos/                   # school_logo.png
-│   ├── qrcodes/                 # Generated QR images
-│   └── cards/                   # Generated member card PDFs
-├── DB/                          # (runtime, gitignored) INITIAL_ADMIN_PASSWORD.txt lives here when created
+│   ├── qrcodes/                 # Generated QR images (runtime, gitignored)
+│   └── cards/                   # Generated member card PDFs (runtime, gitignored)
 ├── .env.example                 # SECRET_PASSPHRASE, SECRET_SALT, FLASK_SECRET_KEY template
-├── .env                         # Secrets (gitignored, auto-generated)
-├── requirements.txt
+├── .env                         # (runtime, gitignored, auto-generated)
+├── pyproject.toml               # ruff lint/style configuration
+├── requirements.txt             # pinned versions
 └── README.md
 ```
 
----
+## Dependencies
 
-## Settings
-
-Open app → menu "Settings" or web → menu "Settings":
-
-| Option | Description | Default |
-|---|---|---|
-| Theme | System / Light / Dark | System |
-| Loan period | Default number of days when borrowing a book | 7 days |
-| Max books per person | Limit number of books borrowed simultaneously | 3 books |
-| Member card validity | Number of days before card expires | 365 days |
-| School name | Displayed on member card and web page | DSNPRU |
-| School logo | PNG file for member card and sidebar | — |
-| Web UI host | 127.0.0.1 (loopback) or 0.0.0.0 (LAN + HTTPS) | 127.0.0.1 |
-| Enable member portal | Enable/disable member page system-wide (disabled → `/member*` returns 404) | Enabled |
-| Member QR rotation cycle (hours) | Time interval per cycle for rotating QR on member page (1–72) | 12 hrs |
-| Neighboring cycle allowance | Number of allowance cycles (0–2) for clock skew between scanner/display QR machines | 1 cycle |
-| Accept legacy card QR | Still accept non-expiring QR on plastic/paper cards (disable when member activation complete) | Enabled |
-
----
-
-## Security System
-
-| Feature | Method |
+| Package | Role |
 |---|---|
-| Admin password | `bcrypt` hash/verify; no default — first boot creates random password and prints once; old 'admin123' automatically removed every boot |
-| QR encryption | `AES-256-GCM` (`v2:` fixed card; `v3:` rotating ticket bind AAD) new; legacy `AES-256-CBC` decodes strictly until migrated via `tools/rotate_qr_key.py` |
-| Key derivation | PBKDF2-HMAC-SHA256 (100k iters) from `.env` secrets auto-generated and placeholder-guarded |
-| Rotating member ticket | Each cycle ticket contains `member_id`+`epoch`, server-side time window check (round time + allowance), no derived state — no persist needed |
-| Login throttling | Web and desktop: 5 failed attempts per 15 minutes → temporary lockout (web admin per IP+username; member page per IP+class+number) |
-| Member PIN code | bcrypt stored in `members.pin_hash` (NULL = not activated yet); first activation must go through real card or admin code — old code stores SHA-256 hash + expires 15 minutes + single use (atomic claim) |
-| Web session | HttpOnly/SameSite=Lax cookie, CSRF token on every POST (constant-time compare), login timing-equalized against enumeration |
-| SQL Injection | Parameterized queries everywhere, status compared via parameter |
-| Data integrity | FK enforcement, UNIQUE index on books.code, borrow_log CHECK (returned IN (0,1)), borrow/return as single IMMEDIATE transaction |
-| Thread safety | `BaseRepository` uses connection-per-query + `threading.Lock`, `transact()` for multi-statement |
-| Schema migrations | `PRAGMA user_version` (v1 legacy → v2 constraints → v3 bulk-import indexes → v4 member portal: pin_hash + activation codes) runs automatically and idempotently every boot |
-| Secrets | `.env` (gitignored), guards placeholder values, changes have runbook in `docs/SECURITY.md` |
+| `customtkinter` | Desktop GUI (Modern Tkinter) |
+| `flask` | Web UI |
+| `opencv-python` + `numpy` | Webcam capture + image processing (desktop) |
+| `pyzbar` | QR decode from camera frames (desktop) |
+| `qrcode` | QR image generation |
+| `cryptography` | AES-256-GCM / AES-256-CBC, PBKDF2 |
+| `bcrypt` | Admin password + member PIN hashing |
+| `reportlab` | Member card & report PDFs |
+| `pymupdf` | In-app PDF viewer |
+| `pillow` | Image handling |
+| `pandas` + `openpyxl` | Excel import/export |
+| `python-dotenv` | `.env` loading |
+| `packaging` | customtkinter dependency |
 
----
+All versions are pinned in `requirements.txt` (verified on Windows / Python 3.10 per the file's header).
 
-## Additional Tools
+## Roadmap
 
-```bash
-# Rotate QR encryption keys (important: before next app launch when .env changes)
-venv\Scripts\python tools\rotate_qr_key.py [--no-cards]
+Current status: every core capability is production-ready — next up:
 
-# Regenerate member card PDFs from current database
-venv\Scripts\python tools\regenerate_member_cards.py
-```
+- [ ] Generate member cards / report PDFs from the web (desktop-only today)
+- [ ] Let members change their own PIN from the portal (currently admin-reset only)
+- [ ] Scheduled automatic backups + retention policy
+- [ ] No-login status kiosk page
 
----
+Bugs and feature requests can be filed directly as [issues](https://github.com/Nonx2360/The-PY-LIB-Project/issues).
 
-## Run Tests
+## Contributing
 
-```bash
-# Windows
-venv\Scripts\python -m unittest discover -s tests
+1. Fork, then branch (`feature/…` or `fix/…`)
+2. `ruff check .` must pass — configured in `pyproject.toml`
+3. The unittest suite must stay green: `python -m unittest discover -s tests`
+4. Security-touching changes (crypto / permissions / sessions) should add regression cases matching the matrix in [`docs/SECURITY.md`](docs/SECURITY.md) § 11
+5. Open a PR with the rationale and screenshots (for UI changes)
 
-# Linux/Mac
-venv/bin/python -m unittest discover -s tests
-```
+Non-code ideas are welcome too: open an issue describing a real-world library scenario.
 
-Currently 193 test cases (18 test files) covering security, rotating tickets, member portal, repositories, migrations, atomic borrow/return, backups, bulk imports, DataTables list APIs + bulk endpoints, offline-safety (no CDN/external fonts), desktop list-paging and web guards.
+## Team & license
 
----
-
-## Database (SQLite3)
-
-| Table | Description |
-|---|---|
-| `admin_users` | System admins (bcrypt hashed password, no default) |
-| `members` | Library member data (name, class, number, QR, expiry date, `pin_hash` — member portal PIN hash NULL until self-activated) — badge key (class, number) must be unique in new system |
-| `books` | Books in system (code [UNIQUE], name, status: `Available` / `Borrowed` / `Retired`) |
-| `borrow_log` | Borrow/return records (returned CHECK 0/1, FK to members/books) |
-| `access_log` | Library check-in/check-out records |
-| `member_activation_codes` | One-time activation codes (stores only SHA-256 hash, expires 15 minutes, UNIQUE) — empty codes never stored |
-
----
-
-## Libraries Used
-
-| Package | Purpose |
-|---|---|
-| `customtkinter` | GUI framework (Modern Tkinter) |
-| `flask` | Web UI framework |
-| `opencv-python` | Webcam + QR scan |
-| `pyzbar` | QR Code decode (desktop) |
-| `Pillow` | Image management |
-| `cryptography` | AES-256-GCM / AES-256-CBC encryption, PBKDF2 |
-| `bcrypt` | Password hashing |
-| `reportlab` | PDF creation (member cards, reports) |
-| `PyMuPDF` (`pymupdf`) | PDF viewer in app |
-| `numpy` | Image processing (opencv) |
-| `qrcode` | QR Code creation |
-| `pandas` | Excel import/export |
-| `openpyxl` | Excel engine for pandas (.xlsx) |
-| `python-dotenv` | Load `.env` |
-| `packaging` | CustomTkinter dependency |
-
----
-
-## Developers
-
-- Miss Khwanchanok Unsiri No. 4 (UX/UI)
-- Mr. Natnanon Rodnoi No. 30 (Developer)
+- Miss Khwanchanok Unsiri, No. 4 (UX/UI)
+- Mr. Natnanon Rodnoi, No. 30 (Developer)
 - **School:** DSNPRU
 
----
+Thanks — beta testers and advisors.
 
-## Acknowledgments
-
-- Beta testers
-- Advisors
-
----
-
-**MIT License © 2025**
+MIT License © 2025
