@@ -3,6 +3,7 @@
 __pycache__/
 *.pyc
 .env
+config/settings.json
 ui_preview/
 backups/
 db/INITIAL_ADMIN_PASSWORD.txt
