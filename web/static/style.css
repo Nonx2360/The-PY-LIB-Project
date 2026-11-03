@@ -231,6 +231,27 @@ input:focus-visible, select:focus-visible {
 .form-inline .form-group { margin-bottom: 0; flex: 1; min-width: 160px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; }
+/* Checkbox toggle rows (settings → member portal group): span the full form
+   width as boxed rows so the 2-column grid cannot scramble their placement. */
+.form-group.form-check-inline {
+    grid-column: 1 / -1;
+    margin-bottom: 0;
+    padding: 12px 14px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--radius-input);
+    background: var(--paper);
+}
+.form-group.form-check-inline label {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 400; font-size: 14px; color: var(--ink);
+    margin-bottom: 0; cursor: pointer;
+}
+.form-group.form-check-inline input[type="checkbox"] {
+    width: 16px; height: 16px; padding: 0; border: none;
+    background: none; box-shadow: none; flex: 0 0 auto;
+    accent-color: var(--navy);
+}
+.form-group .muted { margin-top: 4px; margin-bottom: 0; }
 .inline-form { display: inline; }
 .quick-dates { display: flex; gap: 6px; flex-wrap: wrap; }
 
