@@ -96,7 +96,7 @@ The admin and member sessions live in separate cookie keys — logging into one 
 ### Member portal
 
 - **Self-service login** with class + number + self-set PIN (only the bcrypt hash is stored)
-- **Read-only status pages, one module per page**: the home page (profile + QR + count chips) is linked by the member nav bar to current loans (overdue/due-today badges), recent returns, and access history — there are no borrow/return actions; circulation stays at the desk
+- **Read-only status pages, one module per page**: a full-width layout with a collapsible left sidebar (overlay drawer on narrow screens) linking to current loans (overdue/due-today badges), recent returns, and access history; the home page also shows summary chips — there are no borrow/return actions; circulation stays at the desk
 - **Rotating QR (v3 ticket)** — the member's page shows a personal QR that re-issues itself every time window (admin sets 1–72 h, plus 0–2 grace windows); a photo of yesterday's QR is useless when the window flips
 - **Two-step first activation** — verify with your own printed card or an admin-issued one-time code, then set a PIN within a 10-minute window
 - **Central control** — the whole portal can be switched off (`/member*` → 404) and static plastic-card QRs can be retired independently
@@ -332,13 +332,14 @@ THE-PY-LIB/
 │   │       ├── scan.js          # Camera capture + /scan/resolve calls
 │   │       ├── member_scan.js   # Card-scan camera on the member activation page
 │   │       ├── member_qr.js     # Countdown + QR swap when the window flips
+│   │       ├── member_layout.js # Collapsible member sidebar (remembered choice; drawer on mobile)
 │   │       ├── tables.js        # DataTables configs (books/members/history) + bulk bar
 │   │       └── ui.js            # PyLib helpers: dialogs, toasts, data-confirm, flatpickr init
 │   └── templates/
 │       ├── icons.svg            # Lucide SVG icon sprite
 │       ├── base.html            # Layout + sidebar + vendor stack wiring
 │       ├── login.html           # Login page
-│       ├── member_base.html     # Member pages (standalone shell + member module nav)
+│       ├── member_base.html     # Member pages (full-width shell + collapsible sidebar)
 │       ├── member_login.html    # Member login (class + number + PIN)
 │       ├── member_activate.html # First activation (scan card or admin code) + set PIN
 │       ├── member_home.html     # Member home: status + rotating QR with countdown + summary chips

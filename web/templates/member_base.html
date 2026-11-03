@@ -9,65 +9,83 @@
 </head>
 <body class="login-body member-body">
     {% include 'icons.svg' %}
-    <div class="member-shell">
-        <header class="member-topbar">
-            <a class="member-brand" href="{{ url_for('member_login') }}">
-                <img src="{{ url_for('serve_assets', filename='logos/school_logo.png') }}" alt="Logo" class="brand-logo"
-                     onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
-                <div class="brand-icon" style="display:none">
-                    <svg width="24" height="24"><use href="#icon-book-open"/></svg>
-                </div>
-                <span class="member-brand-text">THE PY-LIB<small>หน้าสมาชิก</small></span>
-            </a>
-            {% if session.member_id %}
-            <form method="POST" action="{{ url_for('member_logout') }}" class="member-logout-form">
-                {{ csrf_field }}
-                <button type="submit" class="btn btn-ghost btn-sm">ออกจากระบบ</button>
-            </form>
-            {% elif session.activation_member_id %}
-            <span class="member-topbar-note">กำลังเปิดใช้งาน — ตั้งรหัส PIN ด้านล่าง</span>
-            {% endif %}
-        </header>
-        {% if session.member_id %}
-        <nav class="member-nav" aria-label="เมนูโมดูลของสมาชิก">
-            {% set nav_ep = request.endpoint %}
-            <a href="{{ url_for('member_portal') }}" class="{% if nav_ep == 'member_portal' %}active{% endif %}">
-                <svg width="16" height="16" aria-hidden="true"><use href="#icon-square"/></svg> QR ประจำตัว
-            </a>
-            <a href="{{ url_for('member_loans') }}" class="{% if nav_ep == 'member_loans' %}active{% endif %}">
-                <svg width="16" height="16" aria-hidden="true"><use href="#icon-book"/></svg> หนังสือที่กำลังยืม
-            </a>
-            <a href="{{ url_for('member_returns') }}" class="{% if nav_ep == 'member_returns' %}active{% endif %}">
-                <svg width="16" height="16" aria-hidden="true"><use href="#icon-history"/></svg> รายการคืนล่าสุด
-            </a>
-            <a href="{{ url_for('member_access') }}" class="{% if nav_ep == 'member_access' %}active{% endif %}">
-                <svg width="16" height="16" aria-hidden="true"><use href="#icon-clock"/></svg> ประวัติการเข้าใช้ห้องสมุด
-            </a>
-        </nav>
-        {% endif %}
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        <div class="member-alerts">
-            {% for category, message in messages %}
-            <div class="alert alert-{{ category }}">
-                <svg width="16" height="16" class="alert-icon">
-                    {% if category == 'success' %}<use href="#icon-check-circle"/>
-                    {% elif category == 'error' %}<use href="#icon-x-circle"/>
-                    {% else %}<use href="#icon-alert-triangle"/>{% endif %}
-                </svg>
-                {{ message }}
-            </div>
-            {% endfor %}
+    {%- macro member_brand_link() %}
+    <a class="member-brand" href="{{ url_for('member_portal') }}">
+        <img src="{{ url_for('serve_assets', filename='logos/school_logo.png') }}" alt="Logo" class="brand-logo"
+             onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+        <div class="brand-icon" style="display:none">
+            <svg width="24" height="24"><use href="#icon-book-open"/></svg>
         </div>
+        <span class="member-brand-text">THE PY-LIB<small>หน้าสมาชิก</small></span>
+    </a>
+    {%- endmacro %}
+    <div class="member-shell" id="memberShell">
+        {% if session.member_id %}
+        <aside class="member-sidebar" id="memberSidebar">
+            <div class="member-sidebar-brand">{{ member_brand_link() }}</div>
+            <nav class="member-nav" aria-label="เมนูโมดูลของสมาชิก">
+                {% set nav_ep = request.endpoint %}
+                <a href="{{ url_for('member_portal') }}" class="{% if nav_ep == 'member_portal' %}active{% endif %}">
+                    <svg width="16" height="16" aria-hidden="true"><use href="#icon-square"/></svg> QR ประจำตัว
+                </a>
+                <a href="{{ url_for('member_loans') }}" class="{% if nav_ep == 'member_loans' %}active{% endif %}">
+                    <svg width="16" height="16" aria-hidden="true"><use href="#icon-book"/></svg> หนังสือที่กำลังยืม
+                </a>
+                <a href="{{ url_for('member_returns') }}" class="{% if nav_ep == 'member_returns' %}active{% endif %}">
+                    <svg width="16" height="16" aria-hidden="true"><use href="#icon-history"/></svg> รายการคืนล่าสุด
+                </a>
+                <a href="{{ url_for('member_access') }}" class="{% if nav_ep == 'member_access' %}active{% endif %}">
+                    <svg width="16" height="16" aria-hidden="true"><use href="#icon-clock"/></svg> ประวัติการเข้าใช้ห้องสมุด
+                </a>
+            </nav>
+            <p class="member-sidebar-foot">ระบบห้องสมุด THE PY-LIB</p>
+        </aside>
+        <div class="member-backdrop" id="memberBackdrop"></div>
         {% endif %}
-        {% endwith %}
-        <main class="member-content">
-            {% block member_content %}{% endblock %}
-        </main>
-        <footer class="member-foot">
-            ระบบห้องสมุด THE PY-LIB — หน้านี้ใช้ตรวจสถานะและแสดง QR ของตัวเองเท่านั้น
-        </footer>
+        <div class="member-main">
+            <header class="member-topbar">
+                {% if session.member_id %}
+                <button type="button" class="member-toggle-btn" id="memberSideToggle"
+                        aria-controls="memberSidebar" aria-expanded="true"
+                        aria-label="พับ / กางแถบเมนูด้านซ้าย">
+                    <svg width="20" height="20" aria-hidden="true"><use href="#icon-menu"/></svg>
+                </button>
+                <form method="POST" action="{{ url_for('member_logout') }}" class="member-logout-form">
+                    {{ csrf_field }}
+                    <button type="submit" class="btn btn-ghost btn-sm">ออกจากระบบ</button>
+                </form>
+                {% else %}
+                <div class="member-topbar-brand">{{ member_brand_link() }}</div>
+                {% if session.activation_member_id %}
+                <span class="member-topbar-note">กำลังเปิดใช้งาน — ตั้งรหัส PIN ด้านล่าง</span>
+                {% endif %}
+                {% endif %}
+            </header>
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            <div class="member-alerts">
+                {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">
+                    <svg width="16" height="16" class="alert-icon">
+                        {% if category == 'success' %}<use href="#icon-check-circle"/>
+                        {% elif category == 'error' %}<use href="#icon-x-circle"/>
+                        {% else %}<use href="#icon-alert-triangle"/>{% endif %}
+                    </svg>
+                    {{ message }}
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+            {% endwith %}
+            <main class="member-content">
+                {% block member_content %}{% endblock %}
+            </main>
+            <footer class="member-foot">
+                ระบบห้องสมุด THE PY-LIB — หน้านี้ใช้ตรวจสถานะและแสดง QR ของตัวเองเท่านั้น
+            </footer>
+        </div>
     </div>
+    <script src="{{ url_for('static', filename='js/member_layout.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>
