@@ -1,5 +1,5 @@
 {% extends "member_base.html" %}
-{% block title %}หน้าสมาชิก — THE PY-LIB{% endblock %}
+{% block title %}หน้าหลักของสมาชิก — THE PY-LIB{% endblock %}
 {% block member_content %}
 
 {% if member_expired %}
@@ -55,63 +55,21 @@
     </section>
 </div>
 
-<section class="card">
-    <div class="card-header"><h3>หนังสือที่กำลังยืม ({{ loans|length }})</h3></div>
-    <div class="card-body">
-        <table class="member-table">
-            <thead><tr><th>หนังสือ</th><th>รหัส</th><th>วันที่ยืม</th><th>ต้องคืนภายใน</th></tr></thead>
-            <tbody>
-            {% for title, code, borrow_date, due in loans %}
-                <tr>
-                    <td>{{ title }}</td>
-                    <td>{{ code }}</td>
-                    <td>{{ borrow_date }}</td>
-                    <td>
-                        {{ due }}
-                        {% if due < today %}<span class="badge badge-danger">เกินกำหนด</span>
-                        {% elif due == today %}<span class="badge badge-warning">วันนี้</span>{% endif %}
-                    </td>
-                </tr>
-            {% else %}
-                <tr><td colspan="4" class="muted">ไม่มีหนังสือที่กำลังยืม</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</section>
-
-<section class="card">
-    <div class="card-header"><h3>รายการคืนล่าสุด</h3></div>
-    <div class="card-body">
-        <table class="member-table">
-            <thead><tr><th>หนังสือ</th><th>รหัส</th><th>ยืมเมื่อ</th><th>กำหนดคืน</th></tr></thead>
-            <tbody>
-            {% for title, code, borrow_date, due in recent_returns %}
-                <tr><td>{{ title }}</td><td>{{ code }}</td>
-                    <td>{{ borrow_date }}</td><td>{{ due }}</td></tr>
-            {% else %}
-                <tr><td colspan="4" class="muted">ยังไม่มีประวัติการคืนหนังสือ</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</section>
-
-<section class="card">
-    <div class="card-header"><h3>ประวัติการเข้าใช้ห้องสมุด</h3></div>
-    <div class="card-body">
-        <table class="member-table">
-            <thead><tr><th>เวลา</th><th>รายการ</th></tr></thead>
-            <tbody>
-            {% for at, action in access_history %}
-                <tr><td>{{ at }}</td><td>{{ action }}</td></tr>
-            {% else %}
-                <tr><td colspan="2" class="muted">ยังไม่มีประวัติการเข้าใช้</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</section>
+<nav class="member-chips" aria-label="สรุปสถานะและหน้าโมดูลอื่น">
+    <a href="{{ url_for('member_loans') }}">
+        <svg width="16" height="16" aria-hidden="true"><use href="#icon-book"/></svg>
+        หนังสือที่กำลังยืม <b>{{ loan_count }}</b>
+        {%- if overdue_count %} <span class="badge badge-danger">เกินกำหนด {{ overdue_count }}</span>{% endif %}
+    </a>
+    <a href="{{ url_for('member_returns') }}">
+        <svg width="16" height="16" aria-hidden="true"><use href="#icon-history"/></svg>
+        รายการคืนล่าสุด <b>{{ return_count }}</b>
+    </a>
+    <a href="{{ url_for('member_access') }}">
+        <svg width="16" height="16" aria-hidden="true"><use href="#icon-clock"/></svg>
+        ประวัติการเข้าใช้ห้องสมุด <b>{{ access_count }}</b>
+    </a>
+</nav>
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/member_qr.js') }}"></script>

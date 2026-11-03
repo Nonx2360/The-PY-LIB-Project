@@ -28,6 +28,23 @@
             <span class="member-topbar-note">กำลังเปิดใช้งาน — ตั้งรหัส PIN ด้านล่าง</span>
             {% endif %}
         </header>
+        {% if session.member_id %}
+        <nav class="member-nav" aria-label="เมนูโมดูลของสมาชิก">
+            {% set nav_ep = request.endpoint %}
+            <a href="{{ url_for('member_portal') }}" class="{% if nav_ep == 'member_portal' %}active{% endif %}">
+                <svg width="16" height="16" aria-hidden="true"><use href="#icon-square"/></svg> QR ประจำตัว
+            </a>
+            <a href="{{ url_for('member_loans') }}" class="{% if nav_ep == 'member_loans' %}active{% endif %}">
+                <svg width="16" height="16" aria-hidden="true"><use href="#icon-book"/></svg> หนังสือที่กำลังยืม
+            </a>
+            <a href="{{ url_for('member_returns') }}" class="{% if nav_ep == 'member_returns' %}active{% endif %}">
+                <svg width="16" height="16" aria-hidden="true"><use href="#icon-history"/></svg> รายการคืนล่าสุด
+            </a>
+            <a href="{{ url_for('member_access') }}" class="{% if nav_ep == 'member_access' %}active{% endif %}">
+                <svg width="16" height="16" aria-hidden="true"><use href="#icon-clock"/></svg> ประวัติการเข้าใช้ห้องสมุด
+            </a>
+        </nav>
+        {% endif %}
         {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
         <div class="member-alerts">

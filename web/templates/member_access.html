@@ -1,0 +1,19 @@
+{% extends "member_base.html" %}
+{% block title %}ประวัติการเข้าใช้ห้องสมุด — THE PY-LIB{% endblock %}
+{% block member_content %}
+<section class="card">
+    <div class="card-header"><h3>ประวัติการเข้าใช้ห้องสมุด</h3></div>
+    <div class="card-body">
+        <table class="member-table">
+            <thead><tr><th>เวลา</th><th>รายการ</th></tr></thead>
+            <tbody>
+            {% for at, action in access_history %}
+                <tr><td>{{ at }}</td><td>{{ action }}</td></tr>
+            {% else %}
+                <tr><td colspan="2" class="muted">ยังไม่มีประวัติการเข้าใช้</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

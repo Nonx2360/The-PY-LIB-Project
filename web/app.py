@@ -156,6 +156,21 @@ def create_app():
         session.pop("activation_member_id", None)
         session.pop("activation_at", None)
 
+    def _member_page_row():
+        """Member row for portal PAGE handlers, or None after cleanup.
+
+        None means the member row vanished while logged in (deleted by an
+        admin): the dangling session is dropped here, so page handlers can
+        simply redirect to the login. /member/qr.png keeps its own JSON
+        guard instead because it answers the live countdown script.
+        """
+        row = _member_from_session()
+        if not row:
+            session.pop("member_id", None)
+            # same generic message as a failed login — nothing echoes back
+            flash("ไม่พบสมาชิกนี้ในระบบ กรุณาเข้าสู่ระบบอีกครั้ง", "error")
+        return row
+
     # ---- /member/qr.png rate limiting (per member session; ids only) ----
     QR_RATE_LIMIT = 30        # images per window, generous for a human page
     QR_RATE_WINDOW = 60.0     # seconds
@@ -383,10 +398,11 @@ def create_app():
     # ── Member portal (rotating QR identity, status-only) ──
     #
     # Members log in with (ชั้น + เลขที่) + their own PIN and see exactly
-    # their loans/due dates/recent returns/access history, plus a live QR
-    # that re-issues itself every member_qr_rotation_hours (v3 ticket).
-    # Nothing here changes library state — borrow/return/delete remain
-    # admin-side on web AND desktop.
+    # their own data. The portal is one module per page — /member (home:
+    # profile + live rotating QR), /member/loans, /member/returns,
+    # /member/access — joined by the nav bar from member_base.html. Each
+    # page re-checks the session row and nothing here changes library
+    # state — borrow/return/delete remain admin-side on web AND desktop.
 
     @app.route("/member/login", methods=["GET", "POST"])
     def member_login():
@@ -436,39 +452,86 @@ def create_app():
     @app.route("/member")
     @member_required
     def member_portal():
-        row = _member_from_session()
+        """Home page: profile + live rotating QR + summary module links."""
+        row = _member_page_row()
         if not row:
-            # member deleted since login — drop the dangling session
-            session.pop("member_id", None)
-            flash("ไม่พบสมาชิกนี้ในระบบ กรุณาเข้าสู่ระบบอีกครั้ง", "error")
             return redirect(url_for("member_login"))
         mid, name, grade, number, expire_date = row
         today = datetime.now().strftime("%Y-%m-%d")
-        loans = member_repo.fetchall(
-            "SELECT bo.title, bo.code, bl.borrow_date, bl.return_due "
-            "FROM borrow_log bl JOIN books bo ON bo.id = bl.book_id "
-            "WHERE bl.member_id = ? AND bl.returned = 0 "
-            "ORDER BY bl.return_due ASC", (mid,))
-        recent_returns = member_repo.fetchall(
-            "SELECT bo.title, bo.code, bl.borrow_date, bl.return_due "
-            "FROM borrow_log bl JOIN books bo ON bo.id = bl.book_id "
-            "WHERE bl.member_id = ? AND bl.returned = 1 "
-            "ORDER BY bl.id DESC LIMIT 10", (mid,))
-        access_history = member_repo.fetchall(
-            "SELECT access_time, action FROM access_log "
-            "WHERE member_id = ? ORDER BY id DESC LIMIT 10", (mid,))
+        loan_count = member_repo.fetchone(
+            "SELECT COUNT(*) FROM borrow_log "
+            "WHERE member_id = ? AND returned = 0", (mid,))[0]
+        overdue_count = member_repo.fetchone(
+            "SELECT COUNT(*) FROM borrow_log "
+            "WHERE member_id = ? AND returned = 0 AND return_due < ?",
+            (mid, today))[0]
+        return_count = member_repo.fetchone(
+            "SELECT COUNT(*) FROM borrow_log "
+            "WHERE member_id = ? AND returned = 1", (mid,))[0]
+        access_count = member_repo.fetchone(
+            "SELECT COUNT(*) FROM access_log WHERE member_id = ?", (mid,))[0]
         hours = member_identity.rotation_hours()
         grace = member_identity.grace_steps()
         seconds_left = security.ticket_epoch_seconds_left(hours)
         expired = bool(expire_date and expire_date < today)
         return render_template(
-            "member_portal.html",
+            "member_home.html",
             member_name=name, member_grade=grade, member_number=number,
-            expire_date=expire_date, member_expired=expired, today=today,
-            loans=loans, recent_returns=recent_returns,
-            access_history=access_history,
+            expire_date=expire_date, member_expired=expired,
+            loan_count=loan_count, overdue_count=overdue_count,
+            return_count=return_count, access_count=access_count,
             qr_seconds=seconds_left, qr_rotation_hours=hours, qr_grace=grace,
         )
+
+    @app.route("/member/loans")
+    @member_required
+    def member_loans():
+        """Books the member currently borrows — its own module page."""
+        row = _member_page_row()
+        if not row:
+            return redirect(url_for("member_login"))
+        today = datetime.now().strftime("%Y-%m-%d")
+        loans = member_repo.fetchall(
+            "SELECT bo.title, bo.code, bl.borrow_date, bl.return_due "
+            "FROM borrow_log bl JOIN books bo ON bo.id = bl.book_id "
+            "WHERE bl.member_id = ? AND bl.returned = 0 "
+            "ORDER BY bl.return_due ASC", (row[0],))
+        return render_template("member_loans.html", loans=loans, today=today)
+
+    @app.route("/member/returns")
+    @member_required
+    def member_returns():
+        """Recently returned books, newest first — its own module page.
+
+        As a dedicated page it can afford a longer window than the old
+        shared portal card, so the cap went 10 → 50 rows.
+        """
+        row = _member_page_row()
+        if not row:
+            return redirect(url_for("member_login"))
+        recent_returns = member_repo.fetchall(
+            "SELECT bo.title, bo.code, bl.borrow_date, bl.return_due "
+            "FROM borrow_log bl JOIN books bo ON bo.id = bl.book_id "
+            "WHERE bl.member_id = ? AND bl.returned = 1 "
+            "ORDER BY bl.id DESC LIMIT 50", (row[0],))
+        return render_template("member_returns.html",
+                               recent_returns=recent_returns)
+
+    @app.route("/member/access")
+    @member_required
+    def member_access():
+        """Own door-scan history, newest first — its own module page.
+
+        Limit raised 10 → 50 for the same reason as /member/returns.
+        """
+        row = _member_page_row()
+        if not row:
+            return redirect(url_for("member_login"))
+        access_history = member_repo.fetchall(
+            "SELECT access_time, action FROM access_log "
+            "WHERE member_id = ? ORDER BY id DESC LIMIT 50", (row[0],))
+        return render_template("member_access.html",
+                               access_history=access_history)
 
     @app.route("/member/qr.png")
     @member_required

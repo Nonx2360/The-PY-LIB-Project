@@ -31,7 +31,13 @@ class TestMemberPortal(unittest.TestCase):
         _env.apply()
         _env.patch()
         web_app_mod.DB_PATH = _env.db_path
+        # importing web.app pulls in config.constants, which calls
+        # settings.load() against whatever file is set — so after re-pointing
+        # SETTINGS_FILE the cache must be re-read, or an operator's runtime
+        # config/settings.json (e.g. testing with a 1-hour QR window) leaks
+        # into every test below.
         settings_mod.SETTINGS_FILE = os.path.join(_env.dir, "settings.json")
+        settings_mod.load()
         cls._orig_cwd = os.getcwd()
         os.chdir(_env.dir)
         harness.stage_static_assets(_env.dir)
@@ -44,6 +50,7 @@ class TestMemberPortal(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         settings_mod.SETTINGS_FILE = ORIG_SETTINGS_FILE
+        settings_mod.load()   # drop this class's temp values from the cache
         os.chdir(cls._orig_cwd)
         _env.restore()
         harness.cleanup(_env.dir)
@@ -317,20 +324,28 @@ class TestMemberPortal(unittest.TestCase):
         client.post("/member/login", data={
             "grade": grade_a, "number": number_a, "pin": "654321",
             "csrf_token": self._csrf(client, "/member/login")})
+        # one module per page — all four render for the member session
+        for path in ("/member", "/member/loans", "/member/returns",
+                     "/member/access"):
+            self.assertEqual(client.get(path).status_code, 200, path)
         body = client.get("/member").get_data(as_text=True)
         self.assertIn(name_a, body)
-        self.assertIn("หนังสือของเอ", body)
-        self.assertNotIn("หนังสือของบี", body)
-        self.assertNotIn("เกินกำหนด", body)      # a's loan is not overdue
+        self.assertIn("QR ประจำตัวของคุณ", body)
+        # loan data lives on /member/loans only; the home page lists no titles
+        self.assertNotIn("หนังสือของเอ", body)
+        loans_a = client.get("/member/loans").get_data(as_text=True)
+        self.assertIn("หนังสือของเอ", loans_a)
+        self.assertNotIn("หนังสือของบี", loans_a)
+        self.assertNotIn("เกินกำหนด", loans_a)   # a's loan is not overdue
         client.post("/member/logout",
                     data={"csrf_token": self._csrf(client, "/member")})
         client.post("/member/login", data={
             "grade": grade_b, "number": number_b, "pin": "654321",
             "csrf_token": self._csrf(client, "/member/login")})
-        body = client.get("/member").get_data(as_text=True)
-        self.assertIn("หนังสือของบี", body)
-        self.assertIn("เกินกำหนด", body)
-        self.assertNotIn("หนังสือของเอ", body)
+        loans_b = client.get("/member/loans").get_data(as_text=True)
+        self.assertIn("หนังสือของบี", loans_b)
+        self.assertIn("เกินกำหนด", loans_b)
+        self.assertNotIn("หนังสือของเอ", loans_b)
 
     def test_qr_png_bound_and_rate_limited(self):
         client = self.app.test_client()
@@ -428,7 +443,9 @@ class TestMemberPortal(unittest.TestCase):
     def test_portal_switch_off_404s_everything(self):
         try:
             settings_mod.set("member_portal_enabled", False)
-            for path in ("/member/login", "/member", "/member/activate"):
+            for path in ("/member/login", "/member", "/member/loans",
+                         "/member/returns", "/member/access",
+                         "/member/activate"):
                 resp = self.admin_client.get(path)
                 self.assertEqual(resp.status_code, 404, path)
         finally:

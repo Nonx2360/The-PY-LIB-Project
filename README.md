@@ -96,7 +96,7 @@ Session ของผู้ดูแลและสมาชิกเป็น ke
 ### หน้าสมาชิก (Member Portal)
 
 - **เข้าสู่ระบบเอง** ด้วย ชั้น + เลขที่ + PIN ที่ตั้งเอง (เก็บเฉพาะ bcrypt hash)
-- **สถานะแบบอ่านอย่างเดียว**: หนังสือที่กำลังยืม + วันกำหนดคืน (ป้ายเกินกำหนด/ครบวันนี้), รายการคืนล่าสุด, ประวัติเข้าใช้ — ไม่มีปุ่มยืม/คืน การยืม-คืนยังเป็นหน้าที่ของเคาน์เตอร์
+- **สถานะแบบอ่านอย่างเดียว แยกหนึ่งหน้าต่อโมดูล**: หน้าหลัก (โปรไฟล์ + QR + ชิปสรุปจำนวน) เชื่อมด้วยแถบเมนูไปยัง `หนังสือที่กำลังยืม` (ป้ายเกินกำหนด/ครบวันนี้) · `รายการคืนล่าสุด` · `ประวัติการเข้าใช้` — ไม่มีปุ่มยืม/คืน การยืม-คืนยังเป็นหน้าที่ของเคาน์เตอร์
 - **QR หมุนเวียน (ตั๋ว v3)** — หน้าของสมาชิกแสดง QR ประจำตัวที่เปลี่ยนเองตามรอบเวลา (ผู้ดูแลตั้ง 1–72 ชั่วโมง, เผื่อรอบข้างเคียง 0–2 รอบ) ภาพถ่าย QR เก่า ๆ ใช้ไม่ได้เมื่อรอบเปลี่ยน
 - **เปิดใช้งานครั้งแรกแบบ 2 ขั้น** — สแกนบัตรของตนเอง หรือใช้รหัสครั้งเดียวจากผู้ดูแล แล้วตั้ง PIN ภายในหน้าต่าง 10 นาที
 - **ควบคุมส่วนกลางได้** — ปิดหน้าสมาชิกทั้งระบบ (`/member*` → 404) และเลือกได้ว่าจะยังรับ QR บนบัตรพลาสติกแบบคงที่หรือไม่
@@ -172,7 +172,7 @@ venv\Scripts\python -c "from web.app import create_app; create_app().run(port=50
 | เขียนผู้ดูแล | `/members/add`, `/members/<id>/delete`, `/members/<id>/activation-code`, `/members/<id>/reset-pin`, `/members/bulk`, `/books/add`, `/books/import`, `/books/template`, `/books/<id>/delete`, `/books/<id>/retire`, `/books/<id>/restore`, `/books/bulk` | POST | ผู้ดูแล |
 | สแกน | `/scan/resolve` | POST | ผู้ดูแล (ถอดรหัส QR ทุกชนิดฝั่งเซิร์ฟเวอร์) |
 | เข้า-ออก | `/access/record` | POST | ผู้ดูแล |
-| หน้าสมาชิก | `/member/login`, `/member/logout`, `/member`, `/member/qr.png`, `/member/activate`, `/member/activate/scan`, `/member/activate/code`, `/member/activate/set-pin` | GET/POST | สมาชิก (session แยกจากผู้ดูแล) |
+| หน้าสมาชิก | `/member/login`, `/member/logout`, `/member`, `/member/loans`, `/member/returns`, `/member/access`, `/member/qr.png`, `/member/activate`, `/member/activate/scan`, `/member/activate/code`, `/member/activate/set-pin` | GET/POST | สมาชิก (session แยกจากผู้ดูแล) |
 | ไฟล์ | `/assets/<path>` | GET | — |
 
 ทุก POST ต้องมี CSRF token (ในฟอร์มหรือ header `X-CSRF-Token`) และเส้นทางที่กีดกันบทบาทจะคืน 302 ไปหน้าล็อกอินที่ต้องการหากไม่มีสิทธิ์
@@ -338,10 +338,13 @@ THE-PY-LIB/
 │       ├── icons.svg            # Lucide SVG icon sprite
 │       ├── base.html            # Layout + sidebar + vendor stack wiring
 │       ├── login.html           # Login page
-│       ├── member_base.html     # หน้าสมาชิก (shell แยก ไม่มีเมนู admin)
+│       ├── member_base.html     # หน้าสมาชิก (shell แยก + แถบเมนูโมดูลของสมาชิก)
 │       ├── member_login.html    # สมาชิกเข้าสู่ระบบ (ชั้น+เลขที่+PIN)
 │       ├── member_activate.html # เปิดใช้งานครั้งแรก (สแกนบัตร หรือรหัสแอดมิน) + ตั้ง PIN
-│       ├── member_portal.html   # สถานะของตัวเอง + QR หมุนเวียนพร้อมนับเวลา
+│       ├── member_home.html     # หน้าหลักสมาชิก: สถานะ + QR หมุนเวียนพร้อมนับเวลา + ชิปสรุป
+│       ├── member_loans.html    # หนังสือที่กำลังยืม (หน้าโมดูลแยก)
+│       ├── member_returns.html  # รายการคืนล่าสุด (หน้าโมดูลแยก)
+│       ├── member_access.html   # ประวัติการเข้าใช้ห้องสมุด (หน้าโมดูลแยก)
 │       ├── index.html           # Dashboard + Chart.js widgets
 │       ├── members.html         # Member management
 │       ├── books.html           # Book management (retire/restore/purge)

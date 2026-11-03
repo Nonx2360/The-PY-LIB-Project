@@ -96,7 +96,7 @@ The admin and member sessions live in separate cookie keys — logging into one 
 ### Member portal
 
 - **Self-service login** with class + number + self-set PIN (only the bcrypt hash is stored)
-- **Read-only status page**: current loans + due dates (overdue/due-today badges), recent returns, access history — there are no borrow/return actions; circulation stays at the desk
+- **Read-only status pages, one module per page**: the home page (profile + QR + count chips) is linked by the member nav bar to current loans (overdue/due-today badges), recent returns, and access history — there are no borrow/return actions; circulation stays at the desk
 - **Rotating QR (v3 ticket)** — the member's page shows a personal QR that re-issues itself every time window (admin sets 1–72 h, plus 0–2 grace windows); a photo of yesterday's QR is useless when the window flips
 - **Two-step first activation** — verify with your own printed card or an admin-issued one-time code, then set a PIN within a 10-minute window
 - **Central control** — the whole portal can be switched off (`/member*` → 404) and static plastic-card QRs can be retired independently
@@ -172,7 +172,7 @@ Numeric inputs are always clamped server-side (the form `min`/`max` are UX only)
 | Admin writes | `/members/add`, `/members/<id>/delete`, `/members/<id>/activation-code`, `/members/<id>/reset-pin`, `/members/bulk`, `/books/add`, `/books/import`, `/books/template`, `/books/<id>/delete`, `/books/<id>/retire`, `/books/<id>/restore`, `/books/bulk` | POST | Admin |
 | Scanning | `/scan/resolve` | POST | Admin (all QR formats decode server-side) |
 | Access log | `/access/record` | POST | Admin |
-| Member portal | `/member/login`, `/member/logout`, `/member`, `/member/qr.png`, `/member/activate`, `/member/activate/scan`, `/member/activate/code`, `/member/activate/set-pin` | GET/POST | Member (session separate from admin) |
+| Member portal | `/member/login`, `/member/logout`, `/member`, `/member/loans`, `/member/returns`, `/member/access`, `/member/qr.png`, `/member/activate`, `/member/activate/scan`, `/member/activate/code`, `/member/activate/set-pin` | GET/POST | Member (session separate from admin) |
 | Assets | `/assets/<path>` | GET | — |
 
 Every POST requires a CSRF token (in the form or via the `X-CSRF-Token` header), and role-gated routes answer 302 to the appropriate login when the session lacks rights.
@@ -338,10 +338,13 @@ THE-PY-LIB/
 │       ├── icons.svg            # Lucide SVG icon sprite
 │       ├── base.html            # Layout + sidebar + vendor stack wiring
 │       ├── login.html           # Login page
-│       ├── member_base.html     # Member pages (standalone shell, no admin nav)
+│       ├── member_base.html     # Member pages (standalone shell + member module nav)
 │       ├── member_login.html    # Member login (class + number + PIN)
 │       ├── member_activate.html # First activation (scan card or admin code) + set PIN
-│       ├── member_portal.html   # Own status + rotating QR with countdown
+│       ├── member_home.html     # Member home: status + rotating QR with countdown + summary chips
+│       ├── member_loans.html    # Current loans (its own page)
+│       ├── member_returns.html  # Recently returned (its own page)
+│       ├── member_access.html   # Access history (its own page)
 │       ├── index.html           # Dashboard + Chart.js widgets
 │       ├── members.html         # Member management
 │       ├── books.html           # Book management (retire/restore/purge)

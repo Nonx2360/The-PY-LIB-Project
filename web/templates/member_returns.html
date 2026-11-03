@@ -1,0 +1,20 @@
+{% extends "member_base.html" %}
+{% block title %}รายการคืนล่าสุด — THE PY-LIB{% endblock %}
+{% block member_content %}
+<section class="card">
+    <div class="card-header"><h3>รายการคืนล่าสุด</h3></div>
+    <div class="card-body">
+        <table class="member-table">
+            <thead><tr><th>หนังสือ</th><th>รหัส</th><th>ยืมเมื่อ</th><th>กำหนดคืน</th></tr></thead>
+            <tbody>
+            {% for title, code, borrow_date, due in recent_returns %}
+                <tr><td>{{ title }}</td><td>{{ code }}</td>
+                    <td>{{ borrow_date }}</td><td>{{ due }}</td></tr>
+            {% else %}
+                <tr><td colspan="4" class="muted">ยังไม่มีประวัติการคืนหนังสือ</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</section>
+{% endblock %}

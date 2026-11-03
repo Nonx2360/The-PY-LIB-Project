@@ -646,3 +646,37 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
     background: var(--navy-wash); border-radius: var(--radius-stamp);
     padding: 10px 16px; display: inline-block; margin: 4px 0 10px;
 }
+
+/* ── Member portal nav: one module per page ─────────────────────────── */
+.member-nav {
+    display: flex; flex-wrap: wrap; gap: 6px; padding: 8px;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-soft);
+}
+.member-nav a {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: var(--radius-stamp);
+    font-size: 14px; color: var(--ink-2); text-decoration: none;
+    white-space: nowrap;
+}
+.member-nav a svg { flex: 0 0 auto; opacity: 0.8; }
+.member-nav a:hover { background: var(--navy-wash); color: var(--navy); }
+.member-nav a.active { background: var(--navy); color: #FFFFFF; font-weight: 600; }
+.member-nav a.active svg { opacity: 1; }
+
+/* home-page summary chips linking to each module page */
+.member-chips { display: flex; flex-wrap: wrap; gap: 10px; }
+.member-chips a {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 12px 16px; font-size: 14px;
+    color: var(--ink); text-decoration: none;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-soft);
+}
+.member-chips a:hover { border-color: var(--navy); color: var(--navy); }
+.member-chips a b { color: var(--navy); font-size: 15px; }
+.member-chips .badge { margin-left: 4px; }
