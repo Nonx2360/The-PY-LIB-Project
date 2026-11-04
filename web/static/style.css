@@ -537,7 +537,12 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
  * ============================================================ */
 .muted { color: var(--ink-3); font-size: 14px; }
 
-.member-body { align-items: stretch; }
+/* member pages reuse .login-body for the paper background, but the
+   portal is a full-bleed app shell — undo the centered login layout */
+.member-body {
+    align-items: stretch; justify-content: flex-start;
+    padding: 0; min-height: 100vh;
+}
 
 /* skip link: first tab stop on every member page, revealed when focused */
 .member-skip-link {
@@ -648,10 +653,15 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
 
 .member-topbar-note { font-size: 13px; color: #A4BCC9; }
 
-.member-alerts { display: flex; flex-direction: column; gap: 8px; margin: 14px 20px 0; }
+.member-alerts {
+    display: flex; flex-direction: column; gap: 8px;
+    width: 100%; max-width: 1200px;   /* stays aligned with .member-content */
+    margin: 14px auto 0; padding: 0 20px;
+}
 
 .member-content {
     flex: 1; display: flex; flex-direction: column; gap: 16px;
+    width: 100%; max-width: 1200px; margin: 0 auto;
     padding: 14px 20px 0;
 }
 
@@ -702,7 +712,7 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
     .portal-grid { grid-template-columns: 1fr; }
     .member-content { padding: 10px 12px 0; gap: 12px; }
     .member-topbar { padding: 8px 12px; }
-    .member-alerts { margin: 10px 12px 0; }
+    .member-alerts { margin: 10px auto 0; padding: 0 12px; }
     .member-content .card-header { padding: 11px 14px; }
     .member-content .card-body { padding: 14px; }
     .member-foot { padding: 16px 12px 12px; }
