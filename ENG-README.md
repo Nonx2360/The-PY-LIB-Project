@@ -96,7 +96,7 @@ The admin and member sessions live in separate cookie keys — logging into one 
 ### Member portal
 
 - **Self-service login** with class + number + self-set PIN (only the bcrypt hash is stored)
-- **Read-only status pages, one module per page**: a full-width layout with a collapsible left sidebar (overlay drawer on narrow screens) linking to current loans (overdue/due-today badges), recent returns, and access history; the home page also shows summary chips — there are no borrow/return actions; circulation stays at the desk
+- **Read-only status pages, one module per page**: a full-width layout with a collapsible left sidebar (overlay drawer on narrow screens) linking to current loans (overdue/due-today badges), recent returns, and access history; the home page also shows summary cards with the overdue badge — there are no borrow/return actions; circulation stays at the desk. UX details included: a skip-to-main-content link, clear keyboard focus indicators, in-card horizontal table scroll on phones, helpful empty states, and `prefers-reduced-motion` support
 - **Rotating QR (v3 ticket)** — the member's page shows a personal QR that re-issues itself every time window (admin sets 1–72 h, plus 0–2 grace windows); a photo of yesterday's QR is useless when the window flips
 - **Two-step first activation** — verify with your own printed card or an admin-issued one-time code, then set a PIN within a 10-minute window
 - **Central control** — the whole portal can be switched off (`/member*` → 404) and static plastic-card QRs can be retired independently

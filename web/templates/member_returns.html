@@ -4,17 +4,26 @@
 <section class="card">
     <div class="card-header"><h3>รายการคืนล่าสุด</h3></div>
     <div class="card-body">
-        <table class="member-table">
-            <thead><tr><th>หนังสือ</th><th>รหัส</th><th>ยืมเมื่อ</th><th>กำหนดคืน</th></tr></thead>
-            <tbody>
-            {% for title, code, borrow_date, due in recent_returns %}
-                <tr><td>{{ title }}</td><td>{{ code }}</td>
-                    <td>{{ borrow_date }}</td><td>{{ due }}</td></tr>
-            {% else %}
-                <tr><td colspan="4" class="muted">ยังไม่มีประวัติการคืนหนังสือ</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
+        <p class="member-page-sub">ล่าสุด 50 รายการ เรียงจากคืนใหม่ไปเก่า</p>
+        <div class="member-table-wrap">
+            <table class="member-table">
+                <thead><tr><th>หนังสือ</th><th>รหัส</th><th>ยืมเมื่อ</th><th>กำหนดคืน</th></tr></thead>
+                <tbody>
+                {% for title, code, borrow_date, due in recent_returns %}
+                    <tr><td>{{ title }}</td><td>{{ code }}</td>
+                        <td>{{ borrow_date }}</td><td>{{ due }}</td></tr>
+                {% else %}
+                    <tr class="member-empty">
+                        <td colspan="4">
+                            <svg width="24" height="24" aria-hidden="true"><use href="#icon-history"/></svg>
+                            <span class="member-empty-title">ยังไม่มีประวัติการคืนหนังสือ</span>
+                            <span class="member-empty-note">จะแสดงเมื่อคุณคืนหนังสือที่เคาน์เตอร์แล้ว</span>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </section>
 {% endblock %}

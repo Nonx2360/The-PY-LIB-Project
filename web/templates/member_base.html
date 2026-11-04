@@ -8,6 +8,7 @@
     {% block head %}{% endblock %}
 </head>
 <body class="login-body member-body">
+    <a class="member-skip-link" href="#memberMain">ข้ามไปยังเนื้อหาหลัก</a>
     {% include 'icons.svg' %}
     {%- macro member_brand_link() %}
     <a class="member-brand" href="{{ url_for('member_portal') }}">
@@ -25,16 +26,16 @@
             <div class="member-sidebar-brand">{{ member_brand_link() }}</div>
             <nav class="member-nav" aria-label="เมนูโมดูลของสมาชิก">
                 {% set nav_ep = request.endpoint %}
-                <a href="{{ url_for('member_portal') }}" class="{% if nav_ep == 'member_portal' %}active{% endif %}">
+                <a href="{{ url_for('member_portal') }}" class="{% if nav_ep == 'member_portal' %}active{% endif %}"{% if nav_ep == 'member_portal' %} aria-current="page"{% endif %}>
                     <svg width="16" height="16" aria-hidden="true"><use href="#icon-square"/></svg> QR ประจำตัว
                 </a>
-                <a href="{{ url_for('member_loans') }}" class="{% if nav_ep == 'member_loans' %}active{% endif %}">
+                <a href="{{ url_for('member_loans') }}" class="{% if nav_ep == 'member_loans' %}active{% endif %}"{% if nav_ep == 'member_loans' %} aria-current="page"{% endif %}>
                     <svg width="16" height="16" aria-hidden="true"><use href="#icon-book"/></svg> หนังสือที่กำลังยืม
                 </a>
-                <a href="{{ url_for('member_returns') }}" class="{% if nav_ep == 'member_returns' %}active{% endif %}">
+                <a href="{{ url_for('member_returns') }}" class="{% if nav_ep == 'member_returns' %}active{% endif %}"{% if nav_ep == 'member_returns' %} aria-current="page"{% endif %}>
                     <svg width="16" height="16" aria-hidden="true"><use href="#icon-history"/></svg> รายการคืนล่าสุด
                 </a>
-                <a href="{{ url_for('member_access') }}" class="{% if nav_ep == 'member_access' %}active{% endif %}">
+                <a href="{{ url_for('member_access') }}" class="{% if nav_ep == 'member_access' %}active{% endif %}"{% if nav_ep == 'member_access' %} aria-current="page"{% endif %}>
                     <svg width="16" height="16" aria-hidden="true"><use href="#icon-clock"/></svg> ประวัติการเข้าใช้ห้องสมุด
                 </a>
             </nav>
@@ -77,7 +78,7 @@
             </div>
             {% endif %}
             {% endwith %}
-            <main class="member-content">
+            <main class="member-content" id="memberMain" tabindex="-1">
                 {% block member_content %}{% endblock %}
             </main>
             <footer class="member-foot">

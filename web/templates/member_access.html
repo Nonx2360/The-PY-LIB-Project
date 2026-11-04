@@ -4,16 +4,25 @@
 <section class="card">
     <div class="card-header"><h3>ประวัติการเข้าใช้ห้องสมุด</h3></div>
     <div class="card-body">
-        <table class="member-table">
-            <thead><tr><th>เวลา</th><th>รายการ</th></tr></thead>
-            <tbody>
-            {% for at, action in access_history %}
-                <tr><td>{{ at }}</td><td>{{ action }}</td></tr>
-            {% else %}
-                <tr><td colspan="2" class="muted">ยังไม่มีประวัติการเข้าใช้</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
+        <p class="member-page-sub">ล่าสุด 50 รายการ เรียงจากใหม่ไปเก่า</p>
+        <div class="member-table-wrap">
+            <table class="member-table">
+                <thead><tr><th>เวลา</th><th>รายการ</th></tr></thead>
+                <tbody>
+                {% for at, action in access_history %}
+                    <tr><td>{{ at }}</td><td>{{ action }}</td></tr>
+                {% else %}
+                    <tr class="member-empty">
+                        <td colspan="2">
+                            <svg width="24" height="24" aria-hidden="true"><use href="#icon-clock"/></svg>
+                            <span class="member-empty-title">ยังไม่มีประวัติการเข้าใช้</span>
+                            <span class="member-empty-note">จะแสดงเมื่อคุณสแกน QR ของตัวเองที่หน้าเคาน์เตอร์</span>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </section>
 {% endblock %}
