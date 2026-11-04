@@ -60,22 +60,22 @@
         <span class="member-stat-icon"><svg width="18" height="18" aria-hidden="true"><use href="#icon-book"/></svg></span>
         <span class="member-stat-body">
             <span class="member-stat-label">หนังสือที่กำลังยืม</span>
-            <span class="member-stat-count"><b>{{ loan_count }}</b> รายการ</span>
+            <span class="member-stat-count"><b data-live-count="loans">{{ loan_count }}</b> รายการ</span>
         </span>
-        {%- if overdue_count %} <span class="badge badge-danger">เกินกำหนด {{ overdue_count }}</span>{% endif %}
+        <span class="badge badge-danger" data-live-badge-overdue {% if not overdue_count %}hidden{% endif %}>เกินกำหนด <span data-live-badge-overdue-n>{{ overdue_count }}</span></span>
     </a>
     <a href="{{ url_for('member_returns') }}">
         <span class="member-stat-icon"><svg width="18" height="18" aria-hidden="true"><use href="#icon-history"/></svg></span>
         <span class="member-stat-body">
             <span class="member-stat-label">รายการคืนล่าสุด</span>
-            <span class="member-stat-count"><b>{{ return_count }}</b> รายการ</span>
+            <span class="member-stat-count"><b data-live-count="returns">{{ return_count }}</b> รายการ</span>
         </span>
     </a>
     <a href="{{ url_for('member_access') }}">
         <span class="member-stat-icon"><svg width="18" height="18" aria-hidden="true"><use href="#icon-clock"/></svg></span>
         <span class="member-stat-body">
             <span class="member-stat-label">ประวัติการเข้าใช้ห้องสมุด</span>
-            <span class="member-stat-count"><b>{{ access_count }}</b> รายการ</span>
+            <span class="member-stat-count"><b data-live-count="access">{{ access_count }}</b> รายการ</span>
         </span>
     </a>
 </nav>

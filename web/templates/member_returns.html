@@ -6,7 +6,7 @@
     <div class="card-body">
         <p class="member-page-sub">ล่าสุด 50 รายการ เรียงจากคืนใหม่ไปเก่า</p>
         <div class="member-table-wrap">
-            <table class="member-table">
+            <table class="member-table" data-live-table="returns">
                 <thead><tr><th>หนังสือ</th><th>รหัส</th><th>ยืมเมื่อ</th><th>กำหนดคืน</th></tr></thead>
                 <tbody>
                 {% for title, code, borrow_date, due in recent_returns %}

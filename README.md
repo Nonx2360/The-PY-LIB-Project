@@ -3,12 +3,12 @@
 # THE PY-LIB
 
 **ระบบบริหารห้องสมุดโรงเรียนครบวงจร — แอปเดสก์ท็อป, เว็บสำหรับผู้ดูแล และหน้าสมาชิกส่วนบุคคล**
-QR ประจำตัวเข้ารหัส AES-256-GCM (รวมตั๋วหมุนเวียนแบบมีอายุ) • ยืม-คืน atomic • 193 การทดสอบ + CI
+QR ประจำตัวเข้ารหัส AES-256-GCM (รวมตั๋วหมุนเวียนแบบมีอายุ) • ยืม-คืน atomic • 198 การทดสอบ + CI
 
 [![CI](https://github.com/Nonx2360/The-PY-LIB-Project/actions/workflows/ci.yml/badge.svg)](https://github.com/Nonx2360/The-PY-LIB-Project/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-306998?logo=python&logoColor=FFD43B)
 ![Platform](https://img.shields.io/badge/Desktop-Windows%2010%2B-0078D6?logo=windows&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-193%20passing-2EA44F)
+![Tests](https://img.shields.io/badge/tests-198%20passing-2EA44F)
 ![License](https://img.shields.io/badge/license-MIT-8A6BE8)
 
 </div>
@@ -91,6 +91,7 @@ Session ของผู้ดูแลและสมาชิกเป็น ke
 - **หยุดให้บริการ → ลบถาวรแบบ 2 ขั้น** (retire → purge) ประวัติถูกเก็บอย่างถูกต้องเสมอ
 - Import Excel ออนเว็บสูงสุด 5,000 แถว/ไฟล์ พร้อมแม่แบบดาวน์โหลด รายงานแถวซ้ำ/ไม่สมบูรณ์รายตัว
 - หน้าแดชบอร์ด Chart.js (ยืม 14 วัน, เข้า-ออก 7 วัน, สัดส่วนสถานะหนังสือ)
+- **อัปเดตแบบเรียลไทม์ (WebSocket)** — ตารางผู้ดูแล/แดชบอร์ด/หน้าสมาชิกต่ออายุข้อมูลเองโดยไม่ต้องกด F5; การเปลี่ยนจากทั้งเว็บและแอปเดสก์ท็อปถูกตรวจจับผ่าน WebSocket ภายใน ~2 วินาที
 - **ทำงานออฟไลน์สมบูรณ์** — ทุกไลบรารี frontend (SweetAlert2, jQuery + DataTables, Alpine.js, Chart.js, Flatpickr) และฟอนต์ Sarabun/Prompt ถูก pin ไว้ใน repo ไม่มี CDN เลย
 
 ### หน้าสมาชิก (Member Portal)
@@ -171,6 +172,7 @@ venv\Scripts\python -c "from web.app import create_app; create_app().run(port=50
 | API ตาราง | `/api/members`, `/api/books`, `/api/history`, `/api/stats`, `/api/analytics` | GET | ผู้ดูแล |
 | เขียนผู้ดูแล | `/members/add`, `/members/<id>/delete`, `/members/<id>/activation-code`, `/members/<id>/reset-pin`, `/members/bulk`, `/books/add`, `/books/import`, `/books/template`, `/books/<id>/delete`, `/books/<id>/retire`, `/books/<id>/restore`, `/books/bulk` | POST | ผู้ดูแล |
 | สแกน | `/scan/resolve` | POST | ผู้ดูแล (ถอดรหัส QR ทุกชนิดฝั่งเซิร์ฟเวอร์) |
+| ช่องเรียลไทม์ | `/admin/ws`, `/member/ws` | GET (WebSocket) | ผู้ดูแล / สมาชิกตาม session (good only same-origin) |
 | เข้า-ออก | `/access/record` | POST | ผู้ดูแล |
 | หน้าสมาชิก | `/member/login`, `/member/logout`, `/member`, `/member/loans`, `/member/returns`, `/member/access`, `/member/qr.png`, `/member/activate`, `/member/activate/scan`, `/member/activate/code`, `/member/activate/set-pin` | GET/POST | สมาชิก (session แยกจากผู้ดูแล) |
 | ไฟล์ | `/assets/<path>` | GET | — |
@@ -250,7 +252,7 @@ venv\Scripts\python -m unittest discover -s tests        # Windows
 venv/bin/python -m unittest discover -s tests            # Linux/Mac
 ```
 
-**193 กรณีทดสอบ รวม 18 ไฟล์** — ครอบคลุม crypto (v1/v2/v3), ตัวตรวจตัวตน (member identity), หน้าสมาชิกครบวงจร, repository และการยืม-คืนแบบ atomic, migration v1→v4, สำรอง/กู้คืน, bulk + import Excel, API ตาราง server-side, guard ของเว็บ (CSRF/throttle/session/สิทธิ์) และ offline-safety
+**198 กรณีทดสอบ รวม 19 ไฟล์** — ครอบคลุม crypto (v1/v2/v3), ตัวตรวจตัวตน (member identity), หน้าสมาชิกครบวงจร, ช่องสัญญาณ WebSocket เรียลไทม์, repository และการยืม-คืนแบบ atomic, migration v1→v4, สำรอง/กู้คืน, bulk + import Excel, API ตาราง server-side, guard ของเว็บ (CSRF/throttle/session/สิทธิ์) และ offline-safety
 
 CI (GitHub Actions) รัน 3 งานแยกกันทุก push/PR:
 
@@ -313,6 +315,7 @@ THE-PY-LIB/
 │       └── pdf_viewer.py        # Built-in PDF viewer (PyMuPDF)
 ├── web/
 │   ├── app.py                   # Flask app: routes, guards, DataTables /api feeds, bulk, analytics, member portal, Excel import
+│   ├── live.py                  # WebSocket hub + DB-marker ticker (realtime push)
 │   ├── csrf.py                  # Per-session CSRF tokens (form field หรือ X-CSRF-Token header)
 │   ├── static/
 │   │   ├── style.css            # Web UI design system
@@ -333,6 +336,8 @@ THE-PY-LIB/
 │   │       ├── member_scan.js   # กล้องสแกนบัตร บนหน้าเปิดใช้งานสมาชิก
 │   │       ├── member_qr.js     # นับเวลาถอยหลัง + สลับ QR เมื่อรอบเปลี่ยน
 │   │       ├── member_layout.js # ปุ่มพับ/กาง sidebar ของหน้าสมาชิก (จำค่าไว้, drawer บนมือถือ)
+│   │       ├── member_live.js   # หน้าสมาชิก: อัปเดตจำนวน/ตารางจาก /member/ws (เรียลไทม์)
+│   │       ├── admin_live.js    # หน้าผู้ดูแล: สั่งโหลดตาราง/แดชบอร์ดใหม่เมื่อข้อมูลเปลี่ยน
 │   │       ├── tables.js        # DataTables configs (books/members/history) + bulk bar
 │   │       └── ui.js            # PyLib helpers: dialogs, toasts, data-confirm, flatpickr init
 │   └── templates/

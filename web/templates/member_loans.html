@@ -6,7 +6,7 @@
     <div class="card-body">
         <p class="member-page-sub">เรียงจากวันต้องคืนที่ใกล้ที่สุดก่อน — การคืนยังทำที่เคาน์เตอร์ตามปกติ</p>
         <div class="member-table-wrap">
-            <table class="member-table">
+            <table class="member-table" data-live-table="loans">
                 <thead><tr><th>หนังสือ</th><th>รหัส</th><th>วันที่ยืม</th><th>ต้องคืนภายใน</th></tr></thead>
                 <tbody>
                 {% for title, code, borrow_date, due in loans %}

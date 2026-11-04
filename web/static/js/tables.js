@@ -485,6 +485,13 @@
         columns: cfg.columns,
     });
 
+    /* live-updates hook (admin_live.js): the server's WebSocket channel
+     * asks for a silent in-place reload when its row data changed */
+    window.PyLib = window.PyLib || {};
+    window.PyLib.dataTablesReload = function () {
+        tableEl.ajax.reload(null, false);
+    };
+
     /* keep the header checkbox honest after every redraw */
     tableEl.on("draw", syncBulkBar);
 

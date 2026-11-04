@@ -3,12 +3,12 @@
 # THE PY-LIB
 
 **A complete school-library management system — desktop app, staff web UI, and a self-service member portal**
-AES-256-GCM encrypted identity QR (including time-limited rotating tickets) • atomic borrowing • 193 tests + CI
+AES-256-GCM encrypted identity QR (including time-limited rotating tickets) • atomic borrowing • 198 tests + CI
 
 [![CI](https://github.com/Nonx2360/The-PY-LIB-Project/actions/workflows/ci.yml/badge.svg)](https://github.com/Nonx2360/The-PY-LIB-Project/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-306998?logo=python&logoColor=FFD43B)
 ![Platform](https://img.shields.io/badge/Desktop-Windows%2010%2B-0078D6?logo=windows&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-193%20passing-2EA44F)
+![Tests](https://img.shields.io/badge/tests-198%20passing-2EA44F)
 ![License](https://img.shields.io/badge/license-MIT-8A6BE8)
 
 </div>
@@ -91,6 +91,7 @@ The admin and member sessions live in separate cookie keys — logging into one 
 - **Two-stage destructive flow** — retire first, delete-purge afterward; history integrity is always preserved
 - Web Excel import up to 5,000 rows/file with a downloadable template and per-row skip reporting
 - Chart.js dashboard (14-day circulations, 7-day access, book status split)
+- **Realtime updates (WebSocket)** — admin tables, the dashboard and the member portal refresh themselves without a manual reload; changes from the web UI *and* the desktop app reach open tabs within ~2 seconds via the DB-marker ticker
 - **Fully offline** — every frontend library (SweetAlert2, jQuery + DataTables, Alpine.js, Chart.js, Flatpickr) and the Sarabun/Prompt fonts are pinned in the repo; zero CDN calls
 
 ### Member portal
@@ -171,6 +172,7 @@ Numeric inputs are always clamped server-side (the form `min`/`max` are UX only)
 | Table APIs | `/api/members`, `/api/books`, `/api/history`, `/api/stats`, `/api/analytics` | GET | Admin |
 | Admin writes | `/members/add`, `/members/<id>/delete`, `/members/<id>/activation-code`, `/members/<id>/reset-pin`, `/members/bulk`, `/books/add`, `/books/import`, `/books/template`, `/books/<id>/delete`, `/books/<id>/retire`, `/books/<id>/restore`, `/books/bulk` | POST | Admin |
 | Scanning | `/scan/resolve` | POST | Admin (all QR formats decode server-side) |
+| Live sockets | `/admin/ws`, `/member/ws` | GET (WebSocket) | Admin / member by session (same-origin only) |
 | Access log | `/access/record` | POST | Admin |
 | Member portal | `/member/login`, `/member/logout`, `/member`, `/member/loans`, `/member/returns`, `/member/access`, `/member/qr.png`, `/member/activate`, `/member/activate/scan`, `/member/activate/code`, `/member/activate/set-pin` | GET/POST | Member (session separate from admin) |
 | Assets | `/assets/<path>` | GET | — |
@@ -250,7 +252,7 @@ venv\Scripts\python -m unittest discover -s tests        # Windows
 venv/bin/python -m unittest discover -s tests            # Linux/Mac
 ```
 
-**193 test cases across 18 files** — crypto (v1/v2/v3), the member-identity resolver, the full member-portal flow, repositories and atomic circulation, migrations v1→v4, backup/restore, bulk + Excel import, server-side table APIs, web guards (CSRF/throttle/sessions/permissions) and offline-safety.
+**198 test cases across 19 files** — crypto (v1/v2/v3), the member-identity resolver, the full member-portal flow, the realtime WebSocket push channel, repositories and atomic circulation, migrations v1→v4, backup/restore, bulk + Excel import, server-side table APIs, web guards (CSRF/throttle/sessions/permissions) and offline-safety.
 
 CI (GitHub Actions) runs three independent jobs on every push/PR:
 
@@ -313,6 +315,7 @@ THE-PY-LIB/
 │       └── pdf_viewer.py        # Built-in PDF viewer (PyMuPDF)
 ├── web/
 │   ├── app.py                   # Flask app: routes, guards, DataTables /api feeds, bulk, analytics, member portal, Excel import
+│   ├── live.py                  # WebSocket hub + DB-marker ticker (realtime push)
 │   ├── csrf.py                  # Per-session CSRF tokens (form field or X-CSRF-Token header)
 │   ├── static/
 │   │   ├── style.css            # Web UI design system
@@ -333,6 +336,8 @@ THE-PY-LIB/
 │   │       ├── member_scan.js   # Card-scan camera on the member activation page
 │   │       ├── member_qr.js     # Countdown + QR swap when the window flips
 │   │       ├── member_layout.js # Collapsible member sidebar (remembered choice; drawer on mobile)
+│   │       ├── member_live.js   # Member pages: live counts/tables from /member/ws
+│   │       ├── admin_live.js    # Admin pages: table/dashboard reload signals from /admin/ws
 │   │       ├── tables.js        # DataTables configs (books/members/history) + bulk bar
 │   │       └── ui.js            # PyLib helpers: dialogs, toasts, data-confirm, flatpickr init
 │   └── templates/

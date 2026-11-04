@@ -87,6 +87,9 @@
         </div>
     </div>
     <script src="{{ url_for('static', filename='js/member_layout.js') }}"></script>
+    {% if session.member_id %}
+    <script src="{{ url_for('static', filename='js/member_live.js') }}"></script>
+    {% endif %}
     {% block scripts %}{% endblock %}
 </body>
 </html>

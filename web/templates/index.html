@@ -73,6 +73,7 @@
 {% endblock %}
 {% block scripts %}
 <script src="{{ url_for('static', filename='vendor/chart.umd.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/admin_live.js') }}" data-topic="dashboard"></script>
 <script>
 (function () {
     if (typeof Chart === "undefined") return;

@@ -19,3 +19,4 @@ pandas==2.3.3
 openpyxl==3.1.5
 pymupdf==1.28.2
 flask==3.1.3
+flask-sock==0.7.0   # realtime WebSocket channel (web/live.py); pulls in simple-websocket

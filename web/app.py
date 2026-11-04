@@ -30,6 +30,8 @@ from services import member_identity
 
 from web import csrf as csrf_mod
 from web.csrf import csrf_field_markup
+from web import live as live_mod
+from flask_sock import Sock
 
 from functools import wraps
 from markupsafe import Markup
@@ -97,6 +99,8 @@ def create_app():
     borrow_repo = BorrowRepository()
     access_repo = AccessRepository()
     admin_repo = AdminRepository()
+
+    sock = Sock(app)
 
     def login_required(f):
         @wraps(f)
@@ -532,6 +536,128 @@ def create_app():
             "WHERE member_id = ? ORDER BY id DESC LIMIT 50", (row[0],))
         return render_template("member_access.html",
                                access_history=access_history)
+
+    # ---- live updates: one WebSocket per open tab -----------------------
+    # Member sockets receive their own snapshot whenever DB markers move;
+    # admin sockets receive only the list of changed topics and let the
+    # page re-fetch its existing JSON feeds. See web/live.py for the hub
+    # and the ticker that detects cross-process changes (desktop app).
+    live_hub = live_mod.LiveHub()
+    live_ticker = live_mod.LiveTicker(
+        live_hub,
+        topics={
+            # cheap markers per page-feed; a changed tuple means the
+            # topic changed (counts catch adds/deletes/status/pin flips)
+            "members": lambda: member_repo.fetchall(
+                "SELECT COUNT(*), COALESCE(SUM(pin_hash IS NOT NULL), 0), "
+                "MAX(id) FROM members"),
+            "books": lambda: book_repo.fetchall(
+                "SELECT COUNT(*), COALESCE(SUM(CASE WHEN status = ? "
+                "THEN 1 ELSE 0 END), 0), MAX(id) FROM books",
+                (BOOK_STATUS_RETIRED,)),
+            "borrow_log": lambda: borrow_repo.fetchall(
+                "SELECT COUNT(*), COALESCE(SUM(returned), 0), MAX(id) "
+                "FROM borrow_log"),
+            "access_log": lambda: access_repo.fetchall(
+                "SELECT COUNT(*), MAX(id) FROM access_log"),
+        },
+        member_payload_fn=None)   # set below with the snapshot builder
+
+    def _member_live_snapshot(mid):
+        """The member's own rows, refreshed — mirrors the portal pages.
+
+        Loans are capped at 100, returns/access at 50 (the pages show 50
+        anyway); counts always cover everything.
+        """
+        today = datetime.now().strftime("%Y-%m-%d")
+        loans = member_repo.fetchall(
+            "SELECT bo.title, bo.code, bl.borrow_date, bl.return_due "
+            "FROM borrow_log bl JOIN books bo ON bo.id = bl.book_id "
+            "WHERE bl.member_id = ? AND bl.returned = 0 "
+            "ORDER BY bl.return_due ASC LIMIT 100", (mid,))
+        returns = member_repo.fetchall(
+            "SELECT bo.title, bo.code, bl.borrow_date, bl.return_due "
+            "FROM borrow_log bl JOIN books bo ON bo.id = bl.book_id "
+            "WHERE bl.member_id = ? AND bl.returned = 1 "
+            "ORDER BY bl.id DESC LIMIT 50", (mid,))
+        access = access_repo.fetchall(
+            "SELECT access_time, action FROM access_log "
+            "WHERE member_id = ? ORDER BY id DESC LIMIT 50", (mid,))
+        loan_n = member_repo.fetchone(
+            "SELECT COUNT(*) FROM borrow_log "
+            "WHERE member_id = ? AND returned = 0", (mid,))[0]
+        overdue_n = member_repo.fetchone(
+            "SELECT COUNT(*) FROM borrow_log "
+            "WHERE member_id = ? AND returned = 0 AND return_due < ?",
+            (mid, today))[0]
+        return_n = member_repo.fetchone(
+            "SELECT COUNT(*) FROM borrow_log "
+            "WHERE member_id = ? AND returned = 1", (mid,))[0]
+        access_n = access_repo.fetchone(
+            "SELECT COUNT(*) FROM access_log WHERE member_id = ?", (mid,))[0]
+        return {
+            "type": "snapshot", "today": today,
+            "counts": {"loans": loan_n, "overdue": overdue_n,
+                       "returns": return_n, "access": access_n},
+            "loans": loans, "returns": returns, "access": access,
+        }
+
+    live_ticker.member_payload_fn = _member_live_snapshot
+
+    def _ws_origin_ok():
+        """Only same-origin sockets: WebSocket GETs carry no CSRF token,
+        so the Origin header (always sent by browsers) is the guard.
+        Compared by hostname, since some ws clients omit :port on Host."""
+        origin = (request.headers.get("Origin") or "").strip()
+        if not origin:
+            return False
+        try:
+            from urllib.parse import urlsplit
+            return urlsplit(origin).hostname == \
+                urlsplit(f"//{request.host}").hostname
+        except ValueError:
+            return False
+
+    @sock.route("/member/ws", endpoint="member_ws")
+    def member_ws(ws):
+        row = _member_from_session() if session.get("member_id") else None
+        if not _ws_origin_ok() or not _member_portal_enabled() or not row:
+            return
+        mid = row[0]
+        live_hub.register("member", ws, key=mid,
+                          payload_fn=_member_live_snapshot)
+        live_ticker.ensure_running()
+        logger.info("web live ws: member socket connected")
+        try:
+            live_hub.send_json(ws, _member_live_snapshot(mid))  # first paint
+            while True:
+                msg = ws.receive(timeout=live_mod.PING_INTERVAL)
+                if msg is None:
+                    break          # idle past the read timeout → close
+                # any client message ({"op":"ping"} keepalive) is ignored
+        except Exception:
+            pass
+        finally:
+            live_hub.unregister(ws)
+            logger.info("web live ws: member socket closed")
+
+    @sock.route("/admin/ws", endpoint="admin_ws")
+    def admin_ws(ws):
+        if not _ws_origin_ok() or not session.get("logged_in"):
+            return
+        live_hub.register("admin", ws)
+        live_ticker.ensure_running()
+        logger.info("web live ws: admin socket connected")
+        try:
+            while True:
+                msg = ws.receive(timeout=live_mod.PING_INTERVAL)
+                if msg is None:
+                    break
+        except Exception:
+            pass
+        finally:
+            live_hub.unregister(ws)
+            logger.info("web live ws: admin socket closed")
 
     @app.route("/member/qr.png")
     @member_required
