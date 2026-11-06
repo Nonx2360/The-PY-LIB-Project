@@ -142,34 +142,52 @@ input:focus-visible, select:focus-visible {
 }
 .card-body { padding: 20px; }
 
-/* ── Stats ─────────────────────────────────────
-   Uniform navy numbers; red is reserved for the one thing
-   that needs action: overdue. */
-.stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 24px; align-items: start; }
-.stat-card {
+/* ── Ledger strip (dashboard) ──────────────────
+   One quiet card, hairline-divided cells, tabular numbers —
+   numbers the way they'd be copied into a day-book.
+   Red is reserved for the one number that needs action: overdue. */
+.ledger {
+    display: grid; grid-template-columns: repeat(4, 1fr);
     background: var(--surface); border: 1px solid var(--line);
-    border-radius: var(--radius-card); padding: 18px 20px;
-    display: flex; align-items: center; gap: 14px;
+    border-radius: var(--radius-card); margin-bottom: 18px;
 }
-.stat-icon { color: var(--navy-ink, var(--ink-3)); flex-shrink: 0; }
-.stat-card > div:first-of-type .stat-icon { color: var(--ink-3); }
-.stat-number { font-family: var(--font-display); font-size: 34px; font-weight: 600; line-height: 1.15; color: var(--ink); }
-.stat-label { font-size: 14px; color: var(--ink-2); margin-top: 1px; }
-.stat-overdue { background: var(--stamp-red-soft); border-color: #EAC8C4; }
-.stat-overdue .stat-icon, .stat-overdue .stat-number { color: var(--stamp-red); }
-.stat-overdue .stat-label { color: #8C3A35; }
+.ledger-item {
+    display: flex; flex-direction: column; gap: 1px;
+    padding: 14px 20px 12px; border-right: 1px solid var(--line);
+}
+.ledger-item:last-child { border-right: none; }
+.ledger-num {
+    font-family: var(--font-display); font-size: 27px; font-weight: 600;
+    line-height: 1.25; color: var(--ink); font-variant-numeric: tabular-nums;
+}
+.ledger-label { font-size: 13.5px; color: var(--ink-2); }
+.ledger-item.is-overdue .ledger-num { color: var(--stamp-red); }
+.ledger-item.is-overdue .ledger-label { color: #8C3A35; }
+@media (max-width: 1024px) {
+    .ledger { grid-template-columns: repeat(2, 1fr); }
+    .ledger-item:nth-child(odd) { border-right: 1px solid var(--line); }
+    .ledger-item:nth-child(even) { border-right: none; }
+    .ledger-item:nth-child(n+3) { border-top: 1px solid var(--line); }
+}
 
-/* ── Action Cards ────────────────────────────── */
-.actions-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; align-items: start; }
-.action-card {
-    background: var(--surface); border: 1px solid var(--line);
-    border-radius: var(--radius-card); padding: 26px 18px; text-align: center;
-    transition: border-color 0.15s, background-color 0.15s; cursor: pointer;
+/* ── Quick links (dashboard) ───────────────────
+   Compact pills, not big tiles. The two daily workflow pages
+   lead in solid navy; management links stay quiet outlines. */
+.quick-links { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
+.quick-link {
+    display: inline-flex; align-items: center;
+    padding: 8px 18px; border: 1px solid var(--line-strong);
+    border-radius: 999px; background: var(--surface);
+    font-size: 14.5px; font-weight: 600; color: var(--ink);
+    cursor: pointer;
+    transition: border-color 0.15s, background-color 0.15s, color 0.15s;
 }
-.action-card:hover { border-color: var(--navy); background: var(--surface); box-shadow: var(--shadow-soft); }
-.action-icon { color: var(--navy); margin-bottom: 10px; }
-.action-card:hover .action-icon { color: var(--marigold); }
-.action-text { font-family: var(--font-display); font-size: 15px; font-weight: 500; color: var(--ink); }
+.quick-link:hover { border-color: var(--navy); background: var(--navy-wash); color: var(--navy); }
+.quick-link.is-primary { background: var(--navy); border-color: var(--navy); color: #FFFFFF; }
+.quick-link.is-primary:hover { background: var(--navy-hover); border-color: var(--navy-hover); }
+@media (max-width: 480px) {
+    .quick-link { min-height: 44px; padding: 10px 20px; }
+}
 
 /* ── Tables ──────────────────────────────────── */
 .data-table { width: 100%; border-collapse: collapse; }
@@ -179,7 +197,7 @@ input:focus-visible, select:focus-visible {
 }
 .data-table td {
     padding: 11px 14px; border-bottom: 1px solid var(--line); font-size: 14.5px;
-    color: var(--ink);
+    color: var(--ink); font-variant-numeric: tabular-nums;
 }
 .data-table tbody tr:last-child td { border-bottom: none; }
 .data-table tr:hover td { background: var(--surface-hover); }
@@ -187,6 +205,18 @@ input:focus-visible, select:focus-visible {
 .text-center { text-align: center; }
 .text-muted { color: var(--ink-3); }
 .actions-cell { white-space: nowrap; display: flex; gap: 4px; align-items: center; }
+
+/* ── Empty state ───────────────────────────────
+   One honest quiet block — icon if it earns its place, a title,
+   a one-line note — instead of blank space or stub layouts. */
+.empty-state {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 3px; text-align: center; padding: 34px 14px;
+    color: var(--ink-2); font-size: 14.5px;
+}
+.empty-state .empty-title { font-weight: 600; color: var(--ink); }
+.empty-state .empty-note { font-size: 13px; color: var(--ink-3); }
+.empty-state svg { color: var(--ink-3); opacity: 0.8; margin-bottom: 8px; }
 
 /* ── Search Box ──────────────────────────────── */
 .search-box { position: relative; display: flex; align-items: center; }
@@ -229,6 +259,8 @@ input:focus-visible, select:focus-visible {
 }
 .form-inline { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
 .form-inline .form-group { margin-bottom: 0; flex: 1; min-width: 160px; }
+.form-inline .form-group.is-wide { flex: 2; }
+.form-note { margin-top: 8px; font-size: 12.5px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
 .form-actions { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 10px; }
 /* Checkbox toggle rows (settings → member portal group): span the full form
@@ -315,25 +347,28 @@ input:focus-visible, select:focus-visible {
     background: var(--paper); min-height: 100vh;
     display: flex; align-items: center; justify-content: center; padding: 24px;
 }
-.login-container {
-    display: flex; align-items: stretch; background: var(--surface);
-    border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-soft);
-    border: 1px solid var(--line);
+/* One paper slip with a navy top rule — the way a library issue slip
+   is stamped at the top. No split-panel marketing hero. */
+.login-slip {
+    width: min(400px, 100%);
+    background: var(--surface);
+    border: 1px solid var(--line); border-top: 3px solid var(--navy);
+    border-radius: var(--radius-card); box-shadow: var(--shadow-soft);
+    padding: 34px 36px 28px;
 }
-.login-brand {
-    background: var(--navy-deep); color: #C8D6DE;
-    width: 340px; padding: 48px 36px; text-align: center;
-    display: flex; flex-direction: column; justify-content: center;
+.login-head { margin-bottom: 20px; }
+.brand-logo-lg { width: 58px; height: 58px; object-fit: contain; margin-bottom: 14px; }
+.brand-icon-lg {
+    width: 58px; height: 58px; margin-bottom: 14px;
+    display: none; align-items: center; justify-content: center;
+    border: 2px solid var(--line-strong); border-radius: 12px; color: var(--ink-3);
 }
-.brand-icon-lg { margin-bottom: 14px; color: #9DC0D2; }
-.login-brand h1 {
-    font-family: var(--font-display); font-size: 26px; font-weight: 600;
-    color: #F4F9FB; margin-bottom: 6px; letter-spacing: 0.2px;
+.login-head h1 { font-family: var(--font-display); font-size: 23px; font-weight: 600; color: var(--ink); }
+.login-sub { font-size: 14px; color: var(--ink-2); margin-top: 2px; }
+.login-school {
+    margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
+    color: var(--marigold); font-size: 13px; font-weight: 600;
 }
-.login-brand p { color: #A4BCC9; font-size: 15px; }
-.school-name { color: var(--marigold-bright); font-size: 14px; margin-top: 10px; font-weight: 600; }
-.login-form-card { width: 360px; padding: 40px 36px; display: flex; flex-direction: column; justify-content: center; }
-.login-form-card h2 { font-family: var(--font-display); font-size: 20px; font-weight: 600; margin-bottom: 22px; color: var(--ink); }
 
 /* ── Motion safety ───────────────────────────── */
 @media (prefers-reduced-motion: reduce) {
@@ -344,7 +379,6 @@ input:focus-visible, select:focus-visible {
    Tiers: 1024 tablet-landscape / 768 tablet+icon-rail /
    480 phone. Verified at 375px per the UX checklist. */
 @media (max-width: 1024px) {
-    .stats-grid, .actions-grid { grid-template-columns: repeat(2, 1fr); }
     .search-box input { width: 180px; }
 }
 @media (max-width: 768px) {
@@ -355,8 +389,6 @@ input:focus-visible, select:focus-visible {
     .sidebar .nav-link.active::before { display: none; }
     .main-content { margin-left: 60px; }
 
-    .stats-grid { grid-template-columns: 1fr; }
-    .actions-grid { grid-template-columns: repeat(2, 1fr); }
     .form-grid { grid-template-columns: 1fr; }
     .content { padding: 20px 16px; }
     .top-bar { padding: 14px 16px; }
@@ -370,8 +402,6 @@ input:focus-visible, select:focus-visible {
     .card-header .search-box { width: 100%; }
     .search-box input { width: 100%; }
 
-    .action-card { padding: 22px 14px; }
-
     .login-container { flex-direction: column; width: min(400px, 100%); }
     .login-brand { width: auto; padding: 30px 24px; }
     .login-form-card { width: auto; padding: 26px 22px; }
@@ -382,8 +412,6 @@ input:focus-visible, select:focus-visible {
     .top-bar h1 { font-size: 18px; }
     .user-badge { display: none; }
     .content { padding: 16px 12px; }
-    .action-card { padding: 18px 10px; }
-    .action-icon svg { width: 28px; height: 28px; }
 
     .btn { min-height: 44px; padding: 10px 16px; }
     .btn-sm { min-height: 40px; min-width: 40px; padding: 8px 14px; }
@@ -398,9 +426,6 @@ input:focus-visible, select:focus-visible {
     .actions-cell { gap: 8px; }
 
     .badge { min-height: 24px; }
-
-    .login-container { border-radius: 12px; }
-    .login-brand h1 { font-size: 22px; }
 }
 /* ── Vendored-stack glue: Alpine x-cloak, request-state overlay, dialogs ── */
 [x-cloak] { display: none !important; }
@@ -411,6 +436,7 @@ input:focus-visible, select:focus-visible {
     box-shadow: var(--shadow-soft);
 }
 .swal2-title { font-family: var(--font-display); font-size: 20px; }
+.swal-note { font-size: 13px; color: var(--ink-2); margin: 6px 0 0; }
 
 /* ── Table filter toolbar ── */
 .table-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -431,11 +457,30 @@ input:focus-visible, select:focus-visible {
     border: 1px solid var(--line); background: var(--surface-hover); color: var(--ink-2);
 }
 
-/* ── dashboard charts (Chart.js) ── */
-.chart-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 16px; }
-.chart-card .chart-body { position: relative; height: 260px; padding: 10px; }
+/* ── dashboard charts (Chart.js) ──
+   The borrow trend is the hero; access + status sit beside it in a
+   stacked side column instead of three equal tiles. */
+.chart-grid {
+    display: grid; grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
+    gap: 16px; margin-top: 0;
+}
+.chart-grid .card { margin-bottom: 0; }
+.chart-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.chart-side .chart-card { flex: 1; display: flex; flex-direction: column; }
+.chart-card .chart-body { position: relative; padding: 10px; }
+.chart-hero .chart-body { height: 330px; }
+.chart-side .chart-body { flex: 1; min-height: 118px; }
+.chart-body .empty-state.is-filled { height: 100%; }
 @media (max-width: 1100px) {
     .chart-grid { grid-template-columns: 1fr; }
+    .chart-hero .chart-body { height: 290px; }
+    .chart-side { display: grid; grid-template-columns: 1fr 1fr; }
+    .chart-side .chart-card { flex: none; }
+    .chart-side .chart-body { height: 200px; min-height: 0; }
+}
+@media (max-width: 768px) {
+    .chart-side { display: flex; flex-direction: column; }
+    .chart-side .chart-body { height: 210px; }
 }
 
 /* ── jQuery DataTables (vendored 1.13.8) — styled by hand against the
@@ -733,10 +778,11 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
 }
 
 .member-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+/* Thai headers: no text-transform tricks — Thai has no case, and letter-
+   spacing breaks combining marks. Quiet size + weight is enough. */
 .member-table th {
-    text-align: left; font-size: 12px; text-transform: uppercase;
-    letter-spacing: 0.03em; color: var(--ink-3);
-    border-bottom: 1px solid var(--line-strong); padding: 6px 8px;
+    text-align: left; font-size: 12.5px; font-weight: 600; color: var(--ink-3);
+    border-bottom: 2px solid var(--line-strong); padding: 6px 8px;
 }
 .member-table td { padding: 7px 8px; border-bottom: 1px solid var(--line); }
 .member-table tbody tr:last-child td { border-bottom: none; }

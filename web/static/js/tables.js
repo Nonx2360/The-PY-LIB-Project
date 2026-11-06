@@ -397,7 +397,7 @@
 
     function showActivationCode(code) {
         var html = "<div class='code-big'>" + esc(code) + "</div>"
-            + "<p style='font-size:13px;color:#4E6472'>ใช้ได้ครั้งเดียว ภายใน 15 นาที<br>"
+            + "<p class='swal-note'>ใช้ได้ครั้งเดียว ภายใน 15 นาที<br>"
             + "สมาชิกใช้รหัสนี้ที่หน้า เปิดใช้งาน บนเว็บ เพื่อตั้งรหัส PIN ของตนเอง"
             + "<br>รหัสนี้จะไม่แสดงอีก — คัดลอกหรือจดไว้ก่อนปิดหน้าต่างนี้</p>";
         if (window.Swal) {

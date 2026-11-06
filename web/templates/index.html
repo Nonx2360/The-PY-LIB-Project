@@ -2,72 +2,44 @@
 {% block title %}แดชบอร์ด — THE PY-LIB{% endblock %}
 {% block page_title %}แดชบอร์ด{% endblock %}
 {% block content %}
-<div class="stats-grid">
-    <div class="stat-card stat-overdue">
-        <div class="stat-icon"><svg width="30" height="30"><use href="#icon-alert-triangle"/></svg></div>
-        <div>
-            <div class="stat-number">{{ overdue }}</div>
-            <div class="stat-label">ค้างส่ง</div>
-        </div>
+<div class="ledger">
+    <div class="ledger-item is-overdue">
+        <span class="ledger-num">{{ overdue }}</span>
+        <span class="ledger-label">ค้างส่ง</span>
     </div>
-    <div class="stat-card stat-borrowed">
-        <div class="stat-icon"><svg width="30" height="30"><use href="#icon-send"/></svg></div>
-        <div>
-            <div class="stat-number">{{ borrowed }}</div>
-            <div class="stat-label">กำลังยืม</div>
-        </div>
+    <div class="ledger-item">
+        <span class="ledger-num">{{ borrowed }}</span>
+        <span class="ledger-label">กำลังยืม</span>
     </div>
-    <div class="stat-card stat-books">
-        <div class="stat-icon"><svg width="30" height="30"><use href="#icon-book-open"/></svg></div>
-        <div>
-            <div class="stat-number">{{ books }}</div>
-            <div class="stat-label">หนังสือทั้งหมด</div>
-        </div>
+    <div class="ledger-item">
+        <span class="ledger-num">{{ books }}</span>
+        <span class="ledger-label">หนังสือทั้งหมด</span>
     </div>
-    <div class="stat-card stat-members">
-        <div class="stat-icon"><svg width="30" height="30"><use href="#icon-users"/></svg></div>
-        <div>
-            <div class="stat-number">{{ members }}</div>
-            <div class="stat-label">สมาชิกทั้งหมด</div>
-        </div>
+    <div class="ledger-item">
+        <span class="ledger-num">{{ members }}</span>
+        <span class="ledger-label">สมาชิกทั้งหมด</span>
     </div>
 </div>
-<div class="actions-grid">
-    <a href="{{ url_for('members') }}" class="action-card">
-        <div class="action-icon"><svg width="36" height="36"><use href="#icon-users"/></svg></div>
-        <div class="action-text">จัดการสมาชิก</div>
-    </a>
-    <a href="{{ url_for('books') }}" class="action-card">
-        <div class="action-icon"><svg width="36" height="36"><use href="#icon-book"/></svg></div>
-        <div class="action-text">จัดการหนังสือ</div>
-    </a>
-    <a href="{{ url_for('borrow') }}" class="action-card">
-        <div class="action-icon"><svg width="36" height="36"><use href="#icon-send"/></svg></div>
-        <div class="action-text">ยืมหนังสือ</div>
-    </a>
-    <a href="{{ url_for('return_book') }}" class="action-card">
-        <div class="action-icon"><svg width="36" height="36"><use href="#icon-download"/></svg></div>
-        <div class="action-text">คืนหนังสือ</div>
-    </a>
-</div>
+<nav class="quick-links" aria-label="ทางลัดการทำงานหลัก">
+    <a class="quick-link is-primary" href="{{ url_for('borrow') }}">ยืมหนังสือ</a>
+    <a class="quick-link is-primary" href="{{ url_for('return_book') }}">คืนหนังสือ</a>
+    <a class="quick-link" href="{{ url_for('books') }}">จัดการหนังสือ</a>
+    <a class="quick-link" href="{{ url_for('members') }}">จัดการสมาชิก</a>
+</nav>
 <div class="chart-grid">
-    <div class="card chart-card">
-        <div class="card-header">
-            <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-bar-chart"/></svg> การยืมหนังสือ 14 วันล่าสุด</h3>
-        </div>
+    <section class="card chart-card chart-hero">
+        <div class="card-header"><h3>การยืมหนังสือ 14 วันล่าสุด</h3></div>
         <div class="chart-body"><canvas id="chartBorrow" aria-label="แนวโน้มการยืมหนังสือ 14 วันล่าสุด"></canvas></div>
-    </div>
-    <div class="card chart-card">
-        <div class="card-header">
-            <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-users"/></svg> การเข้าออก 7 วันล่าสุด</h3>
-        </div>
-        <div class="chart-body"><canvas id="chartAccess" aria-label="จำนวนการเข้าออกห้องสมุด 7 วันล่าสุด"></canvas></div>
-    </div>
-    <div class="card chart-card">
-        <div class="card-header">
-            <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-book"/></svg> สถานะหนังสือ</h3>
-        </div>
-        <div class="chart-body"><canvas id="chartStatus" aria-label="สัดส่วนสถานะหนังสือ"></canvas></div>
+    </section>
+    <div class="chart-side">
+        <section class="card chart-card">
+            <div class="card-header"><h3>การเข้าออก 7 วันล่าสุด</h3></div>
+            <div class="chart-body"><canvas id="chartAccess" aria-label="จำนวนการเข้าออกห้องสมุด 7 วันล่าสุด"></canvas></div>
+        </section>
+        <section class="card chart-card">
+            <div class="card-header"><h3>สถานะหนังสือ</h3></div>
+            <div class="chart-body"><canvas id="chartStatus" aria-label="สัดส่วนสถานะหนังสือ"></canvas></div>
+        </section>
     </div>
 </div>
 {% endblock %}
@@ -127,7 +99,11 @@
             var total = s.available + s.borrowed + s.retired + s.other;
             var body = document.querySelector("#chartStatus").closest(".chart-body");
             if (!total) {
-                body.innerHTML = '<p class="text-center text-muted" style="line-height:230px">ยังไม่มีหนังสือในระบบ</p>';
+                body.innerHTML = '<div class="empty-state is-filled">'
+                    + '<svg width="22" height="22" aria-hidden="true"><use href="#icon-book"/></svg>'
+                    + '<span class="empty-title">ยังไม่มีหนังสือในระบบ</span>'
+                    + '<span class="empty-note">เมื่อเพิ่มหนังสือแล้ว สัดส่วนสถานะจะแสดงที่นี่</span>'
+                    + '</div>';
                 return;
             }
             new Chart(document.getElementById("chartStatus"), {
@@ -146,7 +122,7 @@
                 }
             });
         })
-        .catch(function (status) { /* analytics failed: current stat cards still carry the numbers */ });
+        .catch(function (status) { /* analytics failed: the ledger still carries the numbers */ });
 })();
 </script>
 {% endblock %}
