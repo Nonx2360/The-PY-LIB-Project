@@ -68,9 +68,21 @@ improvisations — a new page reuses them before inventing its own:
 - **Chart hierarchy** (`.chart-grid`) — the borrow trend is the hero
   (~`2fr`); access and status share a stacked `1fr` side column. Three equal
   chart boxes is exactly the flatness to avoid.
+- **The card grammar — เอกสาร form look** — every module (`.card`) is a
+  ruled school form: a `4px double` navy letterhead across the top, a
+  tinted header band (`--paper-band`) with the title set in navy-deep ink,
+  clean white paper below. This is the identity workhorse; it shows on
+  every staff page and the member portal at once.
+- **The date stamp** — a marigold stamp chip (`--date-stamp`) in the staff
+  top bar and on the login slip: `วันพฤหัสบดี 6 พฤศจิกายน 2569`, computed
+  server-side (`stamp_date` context processor). The desk's world is dates
+  (due dates, access times); the stamp is its most native mark. Marigold
+  is spent here + focus ring + active-nav notch, nowhere else.
 - **Card headers are text** — `h3` carries no decorative icon. Icons are
   spent on actions only (buttons, scan rows, sidebar nav), where they mean
   something.
+- **Scanner rows are desk slips** — `.scan-row` is a dashed, paper-tinted
+  strip: the camera module reads as an intake step, not a random button.
 - **Empty states** (`.empty-state`) — a quiet block with a title plus a
   one-line note; never blank space, never layout hacks (`line-height` on a
   spacer paragraph is banned).

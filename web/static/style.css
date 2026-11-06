@@ -31,6 +31,7 @@
 :root {
     --paper: #F6F5F1;          /* page background - warm near-white */
     --surface: #FFFFFF;        /* cards */
+    --paper-band: #EFECE4;     /* card header band - tinted form header */
     --surface-hover: #F1EFE9;  /* table rows, ghost buttons */
     --line: #E3E0D8;           /* hairline borders */
     --line-strong: #CFCBBF;
@@ -119,26 +120,43 @@ input:focus-visible, select:focus-visible {
     background: var(--paper); border-bottom: 1px solid var(--line);
     padding: 18px 32px; display: flex; justify-content: space-between; align-items: center;
 }
-.top-bar h1 { font-family: var(--font-display); font-size: 21px; font-weight: 600; color: var(--ink); }
-.user-info { display: flex; align-items: center; gap: 8px; }
+.top-bar h1 { font-family: var(--font-display); font-size: 22px; font-weight: 600; color: var(--ink); }
+.user-info { display: flex; align-items: center; gap: 10px; }
 .user-badge {
     background: var(--surface); color: var(--ink-2); border: 1px solid var(--line);
     padding: 5px 14px; border-radius: 7px; font-size: 13.5px; font-weight: 600;
 }
+/* the librarian's date stamp: the one marigold ink mark in the chrome.
+   Dashed inner look = rubber stamp, no layout shift on hover (it isn't
+   interactive - it is information the whole desk works from). */
+.date-stamp {
+    display: inline-flex; align-items: center;
+    padding: 3px 12px; border: 2px solid var(--marigold);
+    border-radius: var(--radius-stamp);
+    color: var(--marigold); background: transparent;
+    font-family: var(--font-display); font-size: 13px; font-weight: 600;
+}
 .content { padding: 28px 32px; }
 
-/* ── Cards ───────────────────────────────────── */
+/* ── Cards ─────────────────────────────────────
+   One visual grammar for every module: the เส้นคู่ (double rule)
+   navy letterhead across the top + a tinted header band, like the
+   ruled intake forms a Thai school office actually uses. Everything
+   below the band is clean paper. */
 .card {
     background: var(--surface); border: 1px solid var(--line);
-    border-radius: var(--radius-card); margin-bottom: 20px;
+    border-top: 4px double var(--navy-deep);
+    border-radius: var(--radius-card); margin-bottom: 22px;
 }
 .card-header {
-    padding: 14px 20px; border-bottom: 1px solid var(--line);
+    padding: 12px 22px; background: var(--paper-band);
+    border-bottom: 1px solid var(--line-strong);
+    border-radius: calc(var(--radius-card) - 5px) calc(var(--radius-card) - 5px) 0 0;
     display: flex; justify-content: space-between; align-items: center; gap: 12px;
 }
 .card-header h3 {
-    font-family: var(--font-display); font-size: 16px; font-weight: 500;
-    display: flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--ink);
+    font-family: var(--font-display); font-size: 15.5px; font-weight: 600;
+    display: flex; align-items: center; gap: 6px; white-space: nowrap; color: var(--navy-deep);
 }
 .card-body { padding: 20px; }
 
@@ -294,11 +312,11 @@ input:focus-visible, select:focus-visible {
     font-size: 14.5px; font-weight: 600; font-family: inherit;
     cursor: pointer; transition: background-color 0.15s, color 0.15s, border-color 0.15s; gap: 6px;
 }
-.btn-primary { background: var(--navy); color: #FFFFFF; }
+.btn-primary { background: var(--navy); color: #FFFFFF; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18); }
 .btn-primary:hover { background: var(--navy-hover); }
-.btn-success { background: var(--stamp-green); color: #FFFFFF; }
+.btn-success { background: var(--stamp-green); color: #FFFFFF; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18); }
 .btn-success:hover { background: #1E5237; }
-.btn-danger { background: var(--stamp-red); color: #FFFFFF; }
+.btn-danger { background: var(--stamp-red); color: #FFFFFF; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18); }
 .btn-danger:hover { background: #9A221C; }
 .btn-secondary { background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); }
 .btn-secondary:hover { background: var(--surface-hover); }
@@ -317,8 +335,15 @@ input:focus-visible, select:focus-visible {
 .alert-error   { background: var(--stamp-red-soft);   color: var(--stamp-red);   border: 1px solid #EAC8C4; }
 .alert-warning { background: var(--marigold-wash);    color: var(--marigold);    border: 1px solid #EBD5AE; }
 
-/* ── Card scanner (member badges) ─────────────────── */
-.scan-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
+/* ── Card scanner (member badges) ───────────────────
+   The scanner module reads as an intake slip on the desk:
+   dashed ruled strip, set slightly back from the paper. */
+.scan-row {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin: 0 0 14px; padding: 10px 14px;
+    background: var(--paper); border: 1px dashed var(--line-strong);
+    border-radius: var(--radius-input);
+}
 .scan-status { font-size: 14px; font-weight: 600; color: var(--ink-2); }
 .scan-status-error { color: var(--stamp-red); }
 .scan-preview {
@@ -365,8 +390,9 @@ input:focus-visible, select:focus-visible {
 }
 .login-head h1 { font-family: var(--font-display); font-size: 23px; font-weight: 600; color: var(--ink); }
 .login-sub { font-size: 14px; color: var(--ink-2); margin-top: 2px; }
+.slip-meta { display: flex; justify-content: flex-end; margin-top: 18px; }
 .login-school {
-    margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--line);
+    margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--line);
     color: var(--marigold); font-size: 13px; font-weight: 600;
 }
 
@@ -719,6 +745,7 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
 
 .member-card {
     background: var(--surface); border: 1px solid var(--line);
+    border-top: 4px double var(--navy-deep);   /* same letterhead as staff cards */
     border-radius: var(--radius-card); box-shadow: var(--shadow-soft);
     width: 100%; max-width: 430px; margin: 26px auto 0;
     padding: 30px 34px 26px;
@@ -734,6 +761,15 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
     font-size: 12px; font-weight: 700; padding: 3px 10px;
     border-radius: var(--radius-stamp); margin-bottom: 10px;
 }
+
+/* nested option panel inside an activation slip: not a full module —
+   a tinted inset with no letterhead, no shadow */
+.option-panel {
+    border: none; border-top: none; background: var(--navy-wash);
+    margin-bottom: 12px; border-radius: var(--radius-input); box-shadow: none;
+}
+.option-panel .card-body { padding: 14px; }
+.option-panel h3 { margin-bottom: 10px; font-size: 14.5px; }
 
 .member-alt { margin-top: 18px; font-size: 13px; color: var(--ink-2); }
 .member-alt a { color: var(--navy); font-weight: 600; text-decoration: underline; }
@@ -851,6 +887,6 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
 .member-chips a:hover .member-stat-icon { background: var(--navy); color: #FFFFFF; }
 .member-stat-body { display: flex; flex-direction: column; min-width: 0; }
 .member-stat-label { font-size: 12.5px; color: var(--ink-2); }
-.member-stat-count { font-family: var(--font-display); font-size: 15px; color: var(--navy); }
+.member-stat-count { font-family: var(--font-display); font-size: 15px; color: var(--navy); font-variant-numeric: tabular-nums; }
 .member-stat-count b { font-size: 19px; font-weight: 600; }
 .member-chips .badge { margin-left: auto; align-self: flex-start; flex: 0 0 auto; }

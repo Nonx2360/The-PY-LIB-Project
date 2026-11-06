@@ -34,9 +34,9 @@
     <h2>เปิดใช้งานหน้าสมาชิก</h2>
     <p class="member-sub">ยืนยันตัวตนครั้งแรก แล้วตั้งรหัส PIN ของตัวเอง</p>
 
-    <div class="card question-card" style="border: none; background: var(--navy-wash); margin-bottom: 12px;">
-        <div class="card-body" style="padding: 14px;">
-            <h3 style="margin-bottom: 10px;">วิธีที่ 1 — สแกน QR ที่บัตรของตัวเอง</h3>
+    <div class="card option-panel">
+        <div class="card-body">
+            <h3>วิธีที่ 1 — สแกน QR ที่บัตรของตัวเอง</h3>
             <form method="POST" action="{{ url_for('member_activate_scan') }}" id="scanForm">
                 {{ csrf_field }}
                 <input type="hidden" name="payload" id="scanPayload">

@@ -51,6 +51,7 @@
             <header class="top-bar">
                 <h1>{% block page_title %}{% endblock %}</h1>
                 <div class="user-info">
+                    <span class="date-stamp">{{ stamp_date }}</span>
                     <span class="user-badge">{{ session.username }}</span>
                 </div>
             </header>

@@ -210,14 +210,31 @@ def create_app():
         return out
 
     @app.context_processor
-    def _inject_csrf():
+    def _inject_globals():
+        """Shared template globals: CSRF bits + today's date in Thai script.
+
+        The date is the one thing a circulation desk prints on every slip,
+        so it renders as a stamp in the top bar of every staff page (and on
+        the login slip). No network time — the server's clock is the truth
+        the due-dates are computed from anyway.
+        """
+        _THAI_DAYS = ("จันทร์", "อังคาร", "พุธ", "พฤหัสบดี",
+                      "ศุกร์", "เสาร์", "อาทิตย์")
+        _THAI_MONTHS = ("มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน",
+                        "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม",
+                        "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม")
+        today = datetime.today()
+        stamp_date = (f"{_THAI_DAYS[today.weekday()]} {today.day} "
+                      f"{_THAI_MONTHS[today.month - 1]} {today.year + 543}")
         try:
             return {
                 "csrf_token": csrf_mod._get_token(session),
                 "csrf_field": csrf_field_markup(session),
+                "stamp_date": stamp_date,
             }
         except RuntimeError:  # outside request context
-            return {"csrf_token": "", "csrf_field": Markup("")}
+            return {"csrf_token": "", "csrf_field": Markup(""),
+                    "stamp_date": stamp_date}
 
     # member endpoints grouped by their session state at POST time
     _MEMBER_PUBLIC_POSTS = {
