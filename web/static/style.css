@@ -53,11 +53,15 @@
     --stamp-green: #276749;    --stamp-green-soft: #E8F3EB;
     --stamp-navy: #1E4B63;     --stamp-navy-soft: #E3ECF1;
 
-    --radius-card: 10px;
-    --radius-btn: 8px;
-    --radius-input: 8px;
-    --radius-stamp: 4px;
-    --shadow-soft: 0 2px 10px rgba(20, 55, 74, 0.08);
+    /* Radius system: sharp world with one intentional round contrast element */
+    --radius-card: 0px;        /* panels/cards — sharp, editorial */
+    --radius-btn: 3px;         /* buttons — barely rounded, tight */
+    --radius-input: 0px;       /* form inputs — crisp */
+    --radius-stamp: 2px;       /* badges / date stamps — nearly square */
+
+    /* Border: consistent 1.5px weight for structural borders */
+    --border-hard: 1.5px solid var(--line-strong);
+
     --font-display: 'Prompt', 'Sarabun', sans-serif;
     --font-body: 'Sarabun', sans-serif;
 }
@@ -98,17 +102,16 @@ input:focus-visible, select:focus-visible {
 .nav-links { flex: 1; padding: 14px 10px; overflow-y: auto; }
 .nav-link {
     display: flex; align-items: center; gap: 10px;
-    padding: 9px 13px; border-radius: 7px; font-size: 15px; font-weight: 500;
+    /* sharp, full-bleed strip feel — border-radius: 0 */
+    padding: 9px 13px; border-radius: 0; font-size: 15px; font-weight: 500;
     color: #A4BCC9; transition: background-color 0.15s, color 0.15s;
 }
 .nav-link:hover { background: rgba(255, 255, 255, 0.07); color: #E4EDF2; }
 .nav-link.active {
-    background: rgba(255, 255, 255, 0.10); color: #FFFFFF;
+    /* marigold left accent bar instead of glow — editorial marker */
+    background: rgba(255, 255, 255, 0.08); color: #FFFFFF;
+    border-left: 3px solid var(--marigold-bright);
     position: relative;
-}
-.nav-link.active::before {
-    content: ""; position: absolute; left: 0; top: 7px; bottom: 7px;
-    width: 3px; border-radius: 2px; background: var(--marigold-bright);
 }
 .nav-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; }
 .sidebar-footer { padding: 10px; border-top: 1px solid rgba(255, 255, 255, 0.09); }
@@ -117,14 +120,16 @@ input:focus-visible, select:focus-visible {
 /* ── Main Content ────────────────────────────── */
 .main-content { flex: 1; margin-left: 232px; display: flex; flex-direction: column; }
 .top-bar {
-    background: var(--paper); border-bottom: 1px solid var(--line);
+    /* heavier bottom rule — more visual weight than a hairline */
+    background: var(--paper); border-bottom: 2px solid var(--navy-deep);
     padding: 18px 32px; display: flex; justify-content: space-between; align-items: center;
 }
 .top-bar h1 { font-family: var(--font-display); font-size: 22px; font-weight: 600; color: var(--ink); }
 .user-info { display: flex; align-items: center; gap: 10px; }
 .user-badge {
+    /* nearly-square stamp, 2px radius */
     background: var(--surface); color: var(--ink-2); border: 1px solid var(--line);
-    padding: 5px 14px; border-radius: 7px; font-size: 13.5px; font-weight: 600;
+    padding: 5px 14px; border-radius: 2px; font-size: 13.5px; font-weight: 600;
 }
 /* the librarian's date stamp: the one marigold ink mark in the chrome.
    Dashed inner look = rubber stamp, no layout shift on hover (it isn't
@@ -132,26 +137,36 @@ input:focus-visible, select:focus-visible {
 .date-stamp {
     display: inline-flex; align-items: center;
     padding: 3px 12px; border: 2px solid var(--marigold);
-    border-radius: var(--radius-stamp);
+    border-radius: 2px;
     color: var(--marigold); background: transparent;
     font-family: var(--font-display); font-size: 13px; font-weight: 600;
 }
 .content { padding: 28px 32px; }
 
-/* ── Cards ─────────────────────────────────────
+/* ── Cards (panel) ─────────────────────────────
    One visual grammar for every module: the เส้นคู่ (double rule)
    navy letterhead across the top + a tinted header band, like the
    ruled intake forms a Thai school office actually uses. Everything
-   below the band is clean paper. */
+   below the band is clean paper.
+   Named `.panel` semantically in this comment; actual class stays `.card`
+   so templates do not break. */
 .card {
-    background: var(--surface); border: 1px solid var(--line);
+    background: var(--surface);
+    /* 1.5px border — slightly more present than a hairline */
+    border: 1.5px solid var(--line-strong);
+    /* letterhead double rule — the one decorative touch that makes it
+       feel intentional; kept from the original design */
     border-top: 4px double var(--navy-deep);
-    border-radius: var(--radius-card); margin-bottom: 22px;
+    /* sharp edges — no soft rounding in this design world */
+    border-radius: 0;
+    /* no diffuse shadow — depth comes from borders, not blur */
+    margin-bottom: 22px;
 }
 .card-header {
     padding: 12px 22px; background: var(--paper-band);
     border-bottom: 1px solid var(--line-strong);
-    border-radius: calc(var(--radius-card) - 5px) calc(var(--radius-card) - 5px) 0 0;
+    /* sharp header — no inherited radius from the old radius-card */
+    border-radius: 0;
     display: flex; justify-content: space-between; align-items: center; gap: 12px;
 }
 .card-header h3 {
@@ -167,7 +182,8 @@ input:focus-visible, select:focus-visible {
 .ledger {
     display: grid; grid-template-columns: repeat(4, 1fr);
     background: var(--surface); border: 1px solid var(--line);
-    border-radius: var(--radius-card); margin-bottom: 18px;
+    /* sharp — matches the rest of the sharp world */
+    border-radius: 0; margin-bottom: 18px;
 }
 .ledger-item {
     display: flex; flex-direction: column; gap: 1px;
@@ -190,11 +206,13 @@ input:focus-visible, select:focus-visible {
 
 /* ── Quick links (dashboard) ───────────────────
    Compact pills, not big tiles. The two daily workflow pages
-   lead in solid navy; management links stay quiet outlines. */
+   lead in solid navy; management links stay quiet outlines.
+   The ONE round element in an otherwise sharp world — intentional contrast. */
 .quick-links { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 18px; }
 .quick-link {
     display: inline-flex; align-items: center;
     padding: 8px 18px; border: 1px solid var(--line-strong);
+    /* 999px pill radius — the deliberate round contrast in a sharp world */
     border-radius: 999px; background: var(--surface);
     font-size: 14.5px; font-weight: 600; color: var(--ink);
     cursor: pointer;
@@ -241,7 +259,8 @@ input:focus-visible, select:focus-visible {
 .search-box .search-icon { position: absolute; left: 10px; color: var(--ink-3); pointer-events: none; }
 .search-box input {
     padding: 8px 12px 8px 34px; border: 1px solid var(--line);
-    border-radius: var(--radius-input); font-size: 14px; font-family: inherit;
+    /* crisp input — no radius */
+    border-radius: 0; font-size: 14px; font-family: inherit;
     background: var(--paper); color: var(--ink); width: 250px;
     transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -253,7 +272,8 @@ input:focus-visible, select:focus-visible {
 .badge {
     display: inline-flex; align-items: center; gap: 5px;
     padding: 2px 10px; border: 2px solid currentColor;
-    border-radius: var(--radius-stamp); font-size: 13px; font-weight: 700;
+    /* nearly-square stamp — 2px radius */
+    border-radius: 2px; font-size: 13px; font-weight: 700;
 }
 .badge-success { background: var(--stamp-green-soft); color: var(--stamp-green); }
 .badge-warning { background: var(--marigold-wash); color: var(--marigold); }
@@ -268,7 +288,8 @@ input:focus-visible, select:focus-visible {
 }
 .form-group input, .form-group select {
     width: 100%; padding: 9px 14px; border: 1px solid var(--line-strong);
-    border-radius: var(--radius-input); font-size: 14.5px; font-family: inherit;
+    /* crisp inputs — no radius */
+    border-radius: 0; font-size: 14.5px; font-family: inherit;
     background: var(--paper); color: var(--ink);
     transition: border-color 0.15s, box-shadow 0.15s;
 }
@@ -288,7 +309,7 @@ input:focus-visible, select:focus-visible {
     margin-bottom: 0;
     padding: 12px 14px;
     border: 1px solid var(--line-strong);
-    border-radius: var(--radius-input);
+    border-radius: 0;
     background: var(--paper);
 }
 .form-group.form-check-inline label {
@@ -308,16 +329,21 @@ input:focus-visible, select:focus-visible {
 /* ── Buttons ─────────────────────────────────── */
 .btn {
     display: inline-flex; align-items: center; justify-content: center;
-    padding: 9px 20px; border: none; border-radius: var(--radius-btn);
+    padding: 9px 20px;
+    /* 2px transparent border on default keeps size stable on hover */
+    border: 2px solid transparent; border-radius: 3px;
     font-size: 14.5px; font-weight: 600; font-family: inherit;
-    cursor: pointer; transition: background-color 0.15s, color 0.15s, border-color 0.15s; gap: 6px;
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s, transform 0.12s;
+    gap: 6px;
 }
-.btn-primary { background: var(--navy); color: #FFFFFF; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18); }
-.btn-primary:hover { background: var(--navy-hover); }
-.btn-success { background: var(--stamp-green); color: #FFFFFF; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18); }
-.btn-success:hover { background: #1E5237; }
-.btn-danger { background: var(--stamp-red); color: #FFFFFF; box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18); }
-.btn-danger:hover { background: #9A221C; }
+/* No inset fake-3D shadows — flat fill + slight lift on hover instead */
+.btn-primary { background: var(--navy); color: #FFFFFF; }
+.btn-primary:hover { background: var(--navy-hover); transform: translateY(-1px); }
+.btn-success { background: var(--stamp-green); color: #FFFFFF; }
+.btn-success:hover { background: #1E5237; transform: translateY(-1px); }
+.btn-danger { background: var(--stamp-red); color: #FFFFFF; }
+.btn-danger:hover { background: #9A221C; transform: translateY(-1px); }
 .btn-secondary { background: var(--surface); color: var(--ink); border: 1px solid var(--line-strong); }
 .btn-secondary:hover { background: var(--surface-hover); }
 .btn-ghost { background: transparent; color: var(--ink-2); padding: 5px 8px; }
@@ -327,13 +353,16 @@ input:focus-visible, select:focus-visible {
 
 /* ── Alerts ──────────────────────────────────── */
 .alert {
-    padding: 11px 16px; border-radius: var(--radius-btn); margin-bottom: 16px;
+    /* sharp, notification-bar feel — like VS Code / gov.uk */
+    padding: 11px 16px; border-radius: 0; margin-bottom: 16px;
     font-size: 14.5px; font-weight: 500; display: flex; align-items: center; gap: 8px;
+    /* left accent bar in currentColor signals the alert type at a glance */
+    border-left: 4px solid currentColor;
 }
 .alert-icon { flex-shrink: 0; }
-.alert-success { background: var(--stamp-green-soft); color: var(--stamp-green); border: 1px solid #BFDCC8; }
-.alert-error   { background: var(--stamp-red-soft);   color: var(--stamp-red);   border: 1px solid #EAC8C4; }
-.alert-warning { background: var(--marigold-wash);    color: var(--marigold);    border: 1px solid #EBD5AE; }
+.alert-success { background: var(--stamp-green-soft); color: var(--stamp-green); border: 1px solid #BFDCC8; border-left: 4px solid var(--stamp-green); }
+.alert-error   { background: var(--stamp-red-soft);   color: var(--stamp-red);   border: 1px solid #EAC8C4; border-left: 4px solid var(--stamp-red); }
+.alert-warning { background: var(--marigold-wash);    color: var(--marigold);    border: 1px solid #EBD5AE; border-left: 4px solid var(--marigold); }
 
 /* ── Card scanner (member badges) ───────────────────
    The scanner module reads as an intake slip on the desk:
@@ -342,20 +371,20 @@ input:focus-visible, select:focus-visible {
     display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
     margin: 0 0 14px; padding: 10px 14px;
     background: var(--paper); border: 1px dashed var(--line-strong);
-    border-radius: var(--radius-input);
+    border-radius: 0;
 }
 .scan-status { font-size: 14px; font-weight: 600; color: var(--ink-2); }
 .scan-status-error { color: var(--stamp-red); }
 .scan-preview {
     display: none; width: 260px; max-width: 100%; aspect-ratio: 4 / 3;
     object-fit: cover; background: var(--navy-deep);
-    border: 2px solid var(--navy); border-radius: var(--radius-card);
+    border: 2px solid var(--navy); border-radius: 0;
     margin: 0 0 12px;
 }
 .scan-chip {
     display: inline-flex; align-items: center; gap: 8px; margin: 0 0 14px;
     padding: 2px 12px; border: 2px solid currentColor;
-    border-radius: var(--radius-stamp); background: var(--stamp-navy-soft);
+    border-radius: 2px; background: var(--stamp-navy-soft);
     color: var(--navy); font-size: 14px; font-weight: 700;
 }
 .scan-chip a { color: inherit; text-decoration: underline; }
@@ -373,12 +402,16 @@ input:focus-visible, select:focus-visible {
     display: flex; align-items: center; justify-content: center; padding: 24px;
 }
 /* One paper slip with a navy top rule — the way a library issue slip
-   is stamped at the top. No split-panel marketing hero. */
+   is stamped at the top. No split-panel marketing hero.
+   Hard offset shadow (neo-brutalist) instead of diffuse glow. */
 .login-slip {
     width: min(400px, 100%);
     background: var(--surface);
     border: 1px solid var(--line); border-top: 3px solid var(--navy);
-    border-radius: var(--radius-card); box-shadow: var(--shadow-soft);
+    /* sharp edges — no radius */
+    border-radius: 0;
+    /* solid 3px offset shadow — depth without blur */
+    box-shadow: 3px 3px 0 var(--navy-deep);
     padding: 34px 36px 28px;
 }
 .login-head { margin-bottom: 20px; }
@@ -412,7 +445,8 @@ input:focus-visible, select:focus-visible {
     .sidebar { width: 60px; }
     .sidebar .brand-text, .sidebar .nav-text { display: none; }
     .sidebar .nav-link { justify-content: center; padding: 14px 0; }
-    .sidebar .nav-link.active::before { display: none; }
+    /* active left-border bar hidden on icon-only rail (not enough space) */
+    .sidebar .nav-link.active { border-left: none; }
     .main-content { margin-left: 60px; }
 
     .form-grid { grid-template-columns: 1fr; }
@@ -458,8 +492,8 @@ input:focus-visible, select:focus-visible {
 .swal2-container { z-index: 2000; }
 .swal2-popup {
     font-family: var(--font-body);
-    border-radius: var(--radius-card);
-    box-shadow: var(--shadow-soft);
+    border-radius: 0;
+    /* no diffuse shadow on dialogs */
 }
 .swal2-title { font-family: var(--font-display); font-size: 20px; }
 .swal-note { font-size: 13px; color: var(--ink-2); margin: 6px 0 0; }
@@ -467,13 +501,13 @@ input:focus-visible, select:focus-visible {
 /* ── Table filter toolbar ── */
 .table-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .status-filter {
-    padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--radius-input);
+    padding: 6px 10px; border: 1px solid var(--line); border-radius: 0;
     background: var(--surface); font-family: var(--font-body); font-size: 14px; color: var(--ink);
 }
 
 /* ── borrow page: Alpine state notes ── */
 .borrow-lock-note, .borrow-ok-note {
-    margin-top: 2px; padding: 9px 13px; border-radius: 8px;
+    margin-top: 2px; padding: 9px 13px; border-radius: 0;
     font-size: 14px; display: flex; align-items: center; gap: 8px;
 }
 .borrow-lock-note {
@@ -517,7 +551,7 @@ input:focus-visible, select:focus-visible {
     font-size: 13.5px; color: var(--ink-2);
 }
 .dataTables_wrapper .dataTables_length select {
-    border: 1px solid var(--line); border-radius: var(--radius-input);
+    border: 1px solid var(--line); border-radius: 0;
     background: var(--surface); color: var(--ink);
     font-family: var(--font-body); font-size: 13.5px; padding: 4px 8px;
 }
@@ -525,7 +559,7 @@ input:focus-visible, select:focus-visible {
     float: right; margin: 6px 0;
 }
 .dataTables_wrapper .dataTables_filter input {
-    border: 1px solid var(--line); border-radius: var(--radius-input);
+    border: 1px solid var(--line); border-radius: 0;
     background: var(--surface); color: var(--ink);
     font-family: var(--font-body); font-size: 13.5px;
     padding: 6px 11px; min-width: 220px;
@@ -556,7 +590,9 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
 .dataTables_wrapper .dataTables_paginate .paginate_button {
     display: inline-block; min-width: 30px; margin-left: 4px;
     padding: 5px 9px; text-align: center;
-    border: 1px solid var(--line); border-radius: 8px;
+    border: 1px solid var(--line);
+    /* 2px radius — tighter than the old 8px */
+    border-radius: 2px;
     background: var(--surface); color: var(--ink-2) !important;
     font-size: 13px; text-decoration: none;
 }
@@ -582,8 +618,9 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
 }
 .bulk-bar {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    background: var(--navy-wash); border: 1px solid transparent;
-    border-radius: var(--radius-btn); padding: 9px 13px; margin-bottom: 12px;
+    background: var(--navy-wash); border: 1.5px solid var(--navy-wash);
+    /* sharp corners — no radius */
+    border-radius: 0; padding: 9px 13px; margin-bottom: 12px;
 }
 .bulk-bar .bulk-count { font-weight: 600; color: var(--navy-deep); }
 .bulk-bar .bulk-hint {
@@ -620,7 +657,7 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
     position: absolute; left: 12px; top: -52px; z-index: 60;
     background: var(--surface); color: var(--navy);
     padding: 9px 16px; border: 1px solid var(--line);
-    border-radius: var(--radius-btn); box-shadow: var(--shadow-soft);
+    border-radius: 3px;
     font-weight: 600; transition: top 0.15s;
 }
 .member-skip-link:focus-visible { top: 0; }
@@ -746,7 +783,10 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
 .member-card {
     background: var(--surface); border: 1px solid var(--line);
     border-top: 4px double var(--navy-deep);   /* same letterhead as staff cards */
-    border-radius: var(--radius-card); box-shadow: var(--shadow-soft);
+    /* sharp edges — matches rest of design */
+    border-radius: 0;
+    /* solid 3px offset shadow — neo-brutalist depth, not diffuse */
+    box-shadow: 3px 3px 0 var(--navy-deep);
     width: 100%; max-width: 430px; margin: 26px auto 0;
     padding: 30px 34px 26px;
 }
@@ -759,14 +799,14 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
 .member-step-tag {
     display: inline-block; background: var(--navy-wash); color: var(--navy);
     font-size: 12px; font-weight: 700; padding: 3px 10px;
-    border-radius: var(--radius-stamp); margin-bottom: 10px;
+    border-radius: 2px; margin-bottom: 10px;
 }
 
 /* nested option panel inside an activation slip: not a full module —
    a tinted inset with no letterhead, no shadow */
 .option-panel {
     border: none; border-top: none; background: var(--navy-wash);
-    margin-bottom: 12px; border-radius: var(--radius-input); box-shadow: none;
+    margin-bottom: 12px; border-radius: 0; box-shadow: none;
 }
 .option-panel .card-body { padding: 14px; }
 .option-panel h3 { margin-bottom: 10px; font-size: 14.5px; }
@@ -802,7 +842,7 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
 .qr-panel .card-body { text-align: center; }
 .qr-count {
     font-size: 14px; color: var(--navy); background: var(--navy-wash);
-    border-radius: var(--radius-stamp); padding: 8px 10px; margin-top: 8px;
+    border-radius: 2px; padding: 8px 10px; margin-top: 8px;
 }
 .qr-next-wrap summary {
     cursor: pointer; font-size: 13px; color: var(--ink-2);
@@ -840,7 +880,7 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
 .code-big {
     font-family: monospace; font-size: 26px; font-weight: 700;
     letter-spacing: 3px; color: var(--navy);
-    background: var(--navy-wash); border-radius: var(--radius-stamp);
+    background: var(--navy-wash); border-radius: 2px;
     padding: 10px 16px; display: inline-block; margin: 4px 0 10px;
 }
 
@@ -870,12 +910,15 @@ table.dataTable thead th.sorting_desc::after { content: "↓"; color: var(--navy
     padding: 12px 16px; font-size: 14px;
     color: var(--ink); text-decoration: none;
     background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--radius-card);
-    box-shadow: var(--shadow-soft);
-    transition: border-color 0.15s;
+    /* 1.5px border — slightly more present, no soft feathering */
+    border: 1.5px solid var(--line-strong);
+    /* sharp edges in the sharp world */
+    border-radius: 0;
+    /* no diffuse shadow */
+    transition: border-color 0.15s, border-left-width 0.15s;
 }
-.member-chips a:hover { border-color: var(--navy); }
+/* hover: left accent bar instead of color wash — editorial accent */
+.member-chips a:hover { border-left: 3px solid var(--navy); }
 .member-chips a:focus-visible { outline-offset: 3px; }
 .member-stat-icon {
     flex: 0 0 auto; width: 40px; height: 40px;
