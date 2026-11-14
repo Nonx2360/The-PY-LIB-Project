@@ -229,7 +229,8 @@ def create_app():
                         "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม")
         today = datetime.today()
         stamp_date = (f"{_THAI_DAYS[today.weekday()]} {today.day} "
-                      f"{_THAI_MONTHS[today.month - 1]} {today.year + 543}")
+                      f"{_THAI_MONTHS[today.month - 1]} {today.year + 543} "
+                      f"{today.strftime('%H:%M:%S')}")
         try:
             return {
                 "csrf_token": csrf_mod._get_token(session),
