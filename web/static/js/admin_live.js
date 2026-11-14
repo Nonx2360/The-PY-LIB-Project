@@ -20,7 +20,8 @@
         books: ["books", "borrow_log"],     // book status flips on lend/return
         members: ["members", "borrow_log"], // pin/expire flags live in members
         history: ["borrow_log"],
-        dashboard: ["members", "books", "borrow_log", "access_log"],
+        dashboard: ["members", "books", "borrow_log", "access_log", "inventory_audit"],
+        inventory_audit: ["inventory_audit", "books", "borrow_log"],
     };
     var watch = CONNECTS[topicsFilter];
     if (!watch) return;

@@ -1,5 +1,6 @@
 # db/repositories/borrow_repo.py
 import sqlite3
+from datetime import datetime, timedelta
 
 import config.settings as settings
 from config.constants import BOOK_STATUS_AVAILABLE, BOOK_STATUS_BORROWED
@@ -36,17 +37,49 @@ class BorrowRepository(BaseRepository):
 
     # ------------------- atomic invariants-enforcing operations -------------------
 
+    def _expire_and_offer_next(self, conn, book_id):
+        """Reservation-aware: expire stale offers and (if still available) offer next waiting."""
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        # expire stale offers for this book
+        conn.execute(
+            "UPDATE book_reservations SET status='expired' "
+            "WHERE book_id = ? AND status='offered' AND expires_at IS NOT NULL AND expires_at < ?",
+            (book_id, now_str))
+        # only if available and no active offer, promote next waiting
+        brow = conn.execute("SELECT status FROM books WHERE id = ?", (book_id,)).fetchone()
+        if not brow or brow[0] != BOOK_STATUS_AVAILABLE:
+            return
+        active = conn.execute(
+            "SELECT id FROM book_reservations WHERE book_id = ? AND status='offered' "
+            "AND (expires_at IS NULL OR expires_at >= ?) LIMIT 1",
+            (book_id, now_str)).fetchone()
+        if active:
+            return
+        nxt = conn.execute(
+            "SELECT id FROM book_reservations WHERE book_id = ? AND status='waiting' "
+            "ORDER BY created_at, id LIMIT 1", (book_id,)).fetchone()
+        if not nxt:
+            return
+        hours = int(settings.get("reservation_offer_hours") or 48)
+        offered_at = now_str
+        expires_at = (datetime.now() + timedelta(hours=hours)).strftime("%Y-%m-%d %H:%M:%S")
+        conn.execute(
+            "UPDATE book_reservations SET status='offered', offered_at=?, expires_at=? WHERE id=?",
+            (offered_at, expires_at, nxt[0]))
+
     def try_borrow(self, member_id, book_id, borrow_date, return_due):
-        """Atomically lend one book.
+        """Atomically lend one book (reservation-aware, no silent loans).
 
         Guarantees, enforced inside a single IMMEDIATE transaction:
           * the book exists and is BOOK_STATUS_AVAILABLE ('ว่าง') — its
             status flips to BOOK_STATUS_BORROWED ('ยืมแล้ว') only via a
             conditional UPDATE (rowcount == 1), so concurrent borrowers
             cannot double-lend;
+          * expired offers are cleared; an active offer for another member
+            blocks borrowing, an active offer for this member is fulfilled
+            as part of this explicit borrow;
           * member has no overdue loan and is below max_books_per_member;
-          * on any failure (rule violated or FK/integrity error) the
-            transaction rolls back — no partial state (book status or log).
+          * on any failure the transaction rolls back — no partial state.
 
         Raises BorrowError with a Thai, user-facing message.
         """
@@ -57,6 +90,20 @@ class BorrowRepository(BaseRepository):
                 raise BorrowError("ไม่พบหนังสือในระบบ")
             if row[0] != BOOK_STATUS_AVAILABLE:
                 raise BorrowError(f"หนังสือเล่มนี้ไม่พร้อมให้ยืม (สถานะ: {row[0]})")
+
+            # reservation gate (copy-level FIFO): expire stale and enforce offer
+            now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            conn.execute(
+                "UPDATE book_reservations SET status='expired' "
+                "WHERE book_id = ? AND status='offered' AND expires_at IS NOT NULL AND expires_at < ?",
+                (book_id, now_str))
+            offer = conn.execute(
+                "SELECT id, member_id FROM book_reservations WHERE book_id = ? AND status='offered' "
+                "AND (expires_at IS NULL OR expires_at >= ?) ORDER BY id LIMIT 1",
+                (book_id, now_str)).fetchone()
+            if offer and int(offer[1]) != int(member_id):
+                raise BorrowError("หนังสือเล่มนี้ถูกจอง/เสนอให้สมาชิกอื่นอยู่")
+            offer_id = offer[0] if offer and int(offer[1]) == int(member_id) else None
 
             cur = conn.execute(
                 "UPDATE books SET status = ? WHERE id = ? AND status = ?",
@@ -82,6 +129,10 @@ class BorrowRepository(BaseRepository):
                 "INSERT INTO borrow_log (member_id, book_id, borrow_date, return_due, returned) "
                 "VALUES (?, ?, ?, ?, 0)",
                 (member_id, book_id, borrow_date, return_due))
+            if offer_id:
+                conn.execute(
+                    "UPDATE book_reservations SET status='fulfilled', fulfilled_at=? WHERE id=?",
+                    (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), offer_id))
             return cur.lastrowid
 
         try:
@@ -97,6 +148,9 @@ class BorrowRepository(BaseRepository):
           * unknown/non-open record -> BorrowError, nothing changes;
           * borrow_log.returned=1 and books.status=BOOK_STATUS_AVAILABLE
             ('ว่าง') applied together.
+          * if a waiting reservation exists, the next (FIFO) is offered in the
+            same transaction (no silent loan); the book remains available but
+            held for that offer until claimed/expired.
         """
         def _tx(conn):
             row = conn.execute(
@@ -110,6 +164,8 @@ class BorrowRepository(BaseRepository):
             conn.execute(
                 "UPDATE books SET status = ? WHERE id = ?",
                 (BOOK_STATUS_AVAILABLE, book_id))
+            # reservation-aware: promote next waiter to an explicit offer
+            self._expire_and_offer_next(conn, book_id)
             return book_id
 
         try:

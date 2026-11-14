@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}การจองหนังสือ — THE PY-LIB{% endblock %}
+{% block page_title %}การจองหนังสือ (คิว/ข้อเสนอ){% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header"><h3>สร้างการจอง (ผู้ดูแล)</h3></div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('admin_reservations') }}" class="form-inline" style="gap:8px;flex-wrap:wrap;">
+            {{ csrf_field }}
+            <input type="hidden" name="action" value="reserve">
+            <div class="form-group"><label>รหัสสมาชิก (ID)</label><input type="number" name="member_id" required></div>
+            <div class="form-group"><label>รหัสหนังสือ</label><input type="text" name="book_code" required></div>
+            <button class="btn btn-primary" type="submit">เพิ่มคิวจอง</button>
+        </form>
+        <p class="text-muted" style="margin-top:8px;">ระบบจัดคิวแบบ FIFO ต่อเล่ม เมื่อหนังสือว่างจะสร้าง "ข้อเสนอให้รับ" ตามลำดับ (ต้องยืม/รับจริงโดยชัดเจน ไม่ยืมอัตโนมัติ) และมีวันหมดเวลาข้อเสนอ</p>
+    </div>
+</div>
+<div class="card">
+    <div class="card-header"><h3>รายการจองที่ใช้งานอยู่ (รอคิว/พร้อมรับ)</h3></div>
+    <div class="card-body">
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>ID</th><th>หนังสือ</th><th>สมาชิก</th><th>สถานะ</th><th>สร้างเมื่อ</th><th>เสนอเมื่อ</th><th>หมดเวลา</th><th></th></tr></thead><tbody>
+        {% for r in rows %}
+        <tr>
+            <td>{{ r.id }}</td>
+            <td>{{ r.code }} — {{ r.title }}</td>
+            <td>{{ r.member_name }} ({{ r.grade }}) #{{ r.member_id }}</td>
+            <td>{% if r.status=='offered' %}<span class="badge badge-success">พร้อมรับ</span>{% else %}<span class="badge">รอคิว</span>{% endif %}</td>
+            <td>{{ r.created_at }}</td><td>{{ r.offered_at or '-' }}</td><td>{{ r.expires_at or '-' }}</td>
+            <td>
+                <form method="POST" action="{{ url_for('admin_reservations') }}" style="display:inline" data-confirm="ยกเลิกการจองนี้?">{{ csrf_field }}<input type="hidden" name="action" value="cancel"><input type="hidden" name="reservation_id" value="{{ r.id }}"><button class="btn btn-ghost btn-sm" type="submit">ยกเลิก</button></form>
+            </td>
+        </tr>
+        {% endfor %}
+        {% if not rows %}<tr><td colspan="8" class="text-center text-muted">ไม่มีรายการจองที่ใช้งานอยู่</td></tr>{% endif %}
+        </tbody></table></div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/admin_live.js') }}" data-topic="history"></script>
+{% endblock %}

@@ -1,5 +1,6 @@
 # web/app.py - Flask web UI for THE PY-LIB
 import io
+import json
 import os
 import sys
 import time
@@ -23,6 +24,9 @@ from db.repositories.admin_repo import AdminRepository
 from services.excel_service import ExcelService
 from services.qr_service import QRService
 from services.pdf_service import PDFService
+from services.academic_year_service import AcademicYearService
+from services.inventory_audit_service import InventoryAuditService
+from services.reservation_service import ReservationService
 from core.logger import logger
 from core import security
 from core import throttle
@@ -554,6 +558,35 @@ def create_app():
         return render_template("member_access.html",
                                access_history=access_history)
 
+    @app.route("/member/reservations", methods=["GET", "POST"])
+    @member_required
+    def member_reservations():
+        row = _member_page_row()
+        if not row:
+            return redirect(url_for("member_login"))
+        svc = ReservationService()
+        if request.method == "POST":
+            action = _clean(request.form.get("action"), 20)
+            try:
+                if action == "reserve":
+                    svc.reserve_by_code(request.form.get("book_code"), row[0], actor_member_id=row[0])
+                    flash("ส่งคำขอจองแล้ว (หากหนังสือว่างและไม่มีคิว ระบบอาจเสนอให้รับทันที)", "success")
+                elif action == "cancel":
+                    rid = request.form.get("reservation_id", type=int)
+                    svc.cancel(rid, actor_member_id=row[0], admin=False)
+                    flash("ยกเลิกการจองแล้ว", "success")
+                elif action == "claim":
+                    rid = request.form.get("reservation_id", type=int)
+                    svc.claim(rid, row[0])
+                    flash("รับหนังสือและบันทึกการยืมเรียบร้อยแล้ว", "success")
+                else:
+                    flash("คำสั่งไม่ถูกต้อง", "error")
+            except Exception as exc:
+                flash(str(exc), "error")
+            return redirect(url_for("member_reservations"))
+        reservations = svc.list_for_member(row[0])
+        return render_template("member_reservations.html", reservations=reservations)
+
     # ---- live updates: one WebSocket per open tab -----------------------
     # Member sockets receive their own snapshot whenever DB markers move;
     # admin sockets receive only the list of changed topics and let the
@@ -567,7 +600,11 @@ def create_app():
             # topic changed (counts catch adds/deletes/status/pin flips)
             "members": lambda: member_repo.fetchall(
                 "SELECT COUNT(*), COALESCE(SUM(pin_hash IS NOT NULL), 0), "
-                "MAX(id) FROM members"),
+                "MAX(id), "
+                "COALESCE(SUM(length(COALESCE(grade,'')) + length(COALESCE(number,''))), 0), "
+                "COALESCE(SUM(CASE COALESCE(status,'active') "
+                "WHEN 'active' THEN 1 WHEN 'graduated' THEN 2 WHEN 'left' THEN 3 ELSE 4 END), 0) "
+                "FROM members"),
             "books": lambda: book_repo.fetchall(
                 "SELECT COUNT(*), COALESCE(SUM(CASE WHEN status = ? "
                 "THEN 1 ELSE 0 END), 0), MAX(id) FROM books",
@@ -577,6 +614,10 @@ def create_app():
                 "FROM borrow_log"),
             "access_log": lambda: access_repo.fetchall(
                 "SELECT COUNT(*), MAX(id) FROM access_log"),
+            "inventory_audit": lambda: borrow_repo.fetchall(
+                "SELECT COUNT(*), COALESCE(MAX(id),0), "
+                "COALESCE(SUM(CASE status WHEN 'in_progress' THEN 1 WHEN 'paused' THEN 2 ELSE 0 END),0) "
+                "FROM inventory_audits"),
         },
         member_payload_fn=None)   # set below with the snapshot builder
 
@@ -1482,6 +1523,410 @@ def create_app():
             flash("บันทึกการตั้งค่าสำเร็จ", "success")
             return redirect(url_for("settings_page"))
         return render_template("settings.html", settings=settings.all())
+
+    # ── Academic Year Migration (admin) ───────────────────
+    @app.route("/academic-year-migration", methods=["GET"])
+    @login_required
+    def academic_year_migration_page():
+        svc = AcademicYearService()
+        source = _clean(request.args.get("source", ""), 40)
+        target = _clean(request.args.get("target", ""), 40)
+        preview = None
+        if source and target:
+            preview = svc.build_preview(source, target)
+        runs = svc.repo.recent_runs(limit=15)
+        return render_template("academic_year_migration.html",
+                               source=source, target=target,
+                               preview=preview, runs=runs)
+
+    @app.route("/academic-year-migration/export", methods=["GET"])
+    @login_required
+    def academic_year_migration_export():
+        svc = AcademicYearService()
+        source = _clean(request.args.get("source", ""), 40)
+        target = _clean(request.args.get("target", ""), 40)
+        if not source or not target:
+            flash("กรุณาระบุปีการศึกษาต้นทางและปลายทางก่อนส่งออก", "error")
+            return redirect(url_for("academic_year_migration_page"))
+        preview = svc.build_preview(source, target)
+        csv_text = svc.preview_to_csv(preview)
+        buf = io.BytesIO(csv_text.encode("utf-8"))
+        buf.seek(0)
+        filename = f"academic_year_preview_{source}_to_{target}.csv"
+        return send_file(buf, mimetype="text/csv; charset=utf-8",
+                         as_attachment=True, download_name=filename)
+
+    @app.route("/academic-year-migration/apply", methods=["POST"])
+    @login_required
+    def academic_year_migration_apply():
+        svc = AcademicYearService()
+        source = _clean(request.form.get("source_label"), 40)
+        target = _clean(request.form.get("target_label"), 40)
+        confirm_text = _clean(request.form.get("confirm_text"), 120)
+        force = bool(request.form.get("force_duplicate"))
+        raw_items = request.form.get("plan_json", "[]")
+        try:
+            items = json.loads(raw_items) if raw_items else []
+        except Exception:
+            items = []
+        expected = f"{source}->{target}"
+        if confirm_text != expected:
+            flash(f"ยืนยันไม่ถูกต้อง: พิมพ์ '{expected}' เพื่อยืนยันการย้ายปีการศึกษา", "error")
+            return redirect(url_for("academic_year_migration_page",
+                                    source=source, target=target))
+        # rebuild authoritative preview, then merge reviewed selections/actions
+        preview = svc.build_preview(source, target)
+        by_id = {int(it["member_id"]): it for it in items} if isinstance(items, list) else {}
+        reviewed = []
+        for base in preview.get("items", []):
+            mid = int(base["member_id"])
+            over = by_id.get(mid, {})
+            reviewed.append({
+                "member_id": mid,
+                "name": base["name"],
+                "current_grade": base["current_grade"],
+                "current_number": base["current_number"],
+                "member_status": base["member_status"],
+                "proposed_grade": _clean(over.get("proposed_grade", base["proposed_grade"]), 40),
+                "proposed_number": _clean(over.get("proposed_number", base["proposed_number"]), 20),
+                "action": _clean(over.get("action", base["action"]), 20),
+                "selected": bool(over.get("selected", base.get("selected", False))),
+                "reason": _clean(over.get("reason", base.get("reason", "")), 200),
+                "before": base["before"],
+            })
+        try:
+            result = svc.apply_preview(
+                source, target, session.get("username", "admin"),
+                reviewed, force=force, do_backup=True)
+            s = result["summary"]
+            flash(
+                f"ย้ายปีการศึกษาเสร็จสิ้น (run #{result['run_id']}): "
+                f"เลื่อนชั้น {s.get('promoted',0)} / จบการศึกษา {s.get('graduate',0)} / "
+                f"ออก {s.get('left',0)} / คงเดิม {s.get('kept',0)} / "
+                f"ตรวจสอบเอง {s.get('manual',0)} / ข้าม {s.get('skipped',0)}",
+                "success")
+            logger.info("academic-year migration applied: %s -> %s by %s summary=%s",
+                        source, target, session.get("username"), s)
+        except Exception as exc:
+            logger.error("academic-year migration failed: %s", exc, exc_info=True)
+            flash(f"ไม่สามารถย้ายปีการศึกษาได้: {exc}", "error")
+        return redirect(url_for("academic_year_migration_page",
+                                source=source, target=target))
+
+    # ── Reservations (admin) ──────────────────────────────
+    @app.route("/reservations", methods=["GET", "POST"])
+    @login_required
+    def admin_reservations():
+        svc = ReservationService()
+        if request.method == "POST":
+            action = _clean(request.form.get("action"), 20)
+            try:
+                if action == "reserve":
+                    member_id = request.form.get("member_id", type=int)
+                    svc.reserve_by_code(request.form.get("book_code"), member_id, admin=True)
+                    flash("เพิ่มคิวจองแล้ว", "success")
+                elif action == "cancel":
+                    rid = request.form.get("reservation_id", type=int)
+                    svc.cancel(rid, admin=True)
+                    flash("ยกเลิกการจองแล้ว", "success")
+                else:
+                    flash("คำสั่งไม่ถูกต้อง", "error")
+            except Exception as exc:
+                flash(str(exc), "error")
+            return redirect(url_for("admin_reservations"))
+        # active reservations with details
+        raw = member_repo.fetchall(
+            "SELECT r.id, r.book_id, b.code, b.title, r.member_id, m.name, m.grade, r.status, "
+            "r.created_at, r.offered_at, r.expires_at "
+            "FROM book_reservations r "
+            "JOIN books b ON b.id = r.book_id "
+            "JOIN members m ON m.id = r.member_id "
+            "WHERE r.status IN ('waiting','offered') "
+            "ORDER BY CASE r.status WHEN 'offered' THEN 0 ELSE 1 END, r.created_at, r.id")
+        rows = [{"id": r[0], "book_id": r[1], "code": r[2], "title": r[3],
+                 "member_id": r[4], "member_name": r[5], "grade": r[6],
+                 "status": r[7], "created_at": r[8], "offered_at": r[9],
+                 "expires_at": r[10]} for r in raw]
+        return render_template("reservations.html", rows=rows)
+
+    # ── Self-service Kiosk (isolated, no admin/member portal) ──
+    def _kiosk_enabled():
+        return bool(settings.get("kiosk_enabled"))
+
+    def _kiosk_idle_seconds():
+        try:
+            return max(30, int(settings.get("kiosk_idle_timeout_seconds") or 90))
+        except Exception:
+            return 90
+
+    def _kiosk_touch():
+        session["kiosk_seen"] = time.time()
+
+    def _kiosk_expired():
+        seen = session.get("kiosk_seen")
+        if not seen:
+            return False
+        return (time.time() - float(seen)) > _kiosk_idle_seconds()
+
+    def _kiosk_clear_member():
+        session.pop("kiosk_member_id", None)
+        session.pop("kiosk_member_label", None)
+        session.pop("kiosk_seen", None)
+
+    def _kiosk_member_context():
+        if not _kiosk_enabled():
+            return None
+        if _kiosk_expired():
+            _kiosk_clear_member()
+            return None
+        mid = session.get("kiosk_member_id")
+        if not mid:
+            return None
+        row = member_repo.fetchone(
+            "SELECT id, name, grade, number, expire_date FROM members WHERE id = ?",
+            (mid,))
+        if not row:
+            _kiosk_clear_member()
+            return None
+        active = borrow_repo.fetchone(
+            "SELECT COUNT(*) FROM borrow_log WHERE member_id = ? AND returned = 0",
+            (mid,))[0]
+        overdue = borrow_repo.fetchone(
+            "SELECT COUNT(*) FROM borrow_log WHERE member_id = ? AND returned = 0 "
+            "AND return_due < date('now')", (mid,))[0]
+        max_books = settings.get("max_books_per_member")
+        # minimal label (avoid exposing extra details); kiosk is for the member
+        label = f"{(row[1] or '').strip()} ({(row[2] or '').strip()})".strip()
+        return {"id": row[0], "label": label, "active": active,
+                "overdue": overdue, "max_books": max_books}
+
+    def _kiosk_find_book(raw):
+        raw = (raw or "").strip()
+        if not raw:
+            return None
+        candidates = [raw]
+        try:
+            dec = security.decrypt_qr_data(raw)
+            if dec and dec not in candidates:
+                candidates.append(dec.strip())
+        except Exception:
+            pass
+        for cand in candidates:
+            row = book_repo.fetchone(
+                "SELECT id, code, title, status FROM books WHERE code = ? OR lower(code)=lower(?)",
+                (cand, cand))
+            if row:
+                return row
+        return None
+
+    @app.route("/kiosk")
+    def kiosk_page():
+        if not _kiosk_enabled():
+            return "Kiosk disabled", 404
+        _kiosk_touch()
+        km = _kiosk_member_context()
+        loans = []
+        if km:
+            rows = borrow_repo.fetchall(
+                "SELECT bo.code, bo.title, bl.return_due FROM borrow_log bl "
+                "JOIN books bo ON bo.id = bl.book_id "
+                "WHERE bl.member_id = ? AND bl.returned = 0 ORDER BY bl.return_due",
+                (km["id"],))
+            loans = [{"code": r[0], "title": r[1], "due": r[2]} for r in rows]
+        return render_template("kiosk.html", kiosk_member=km, kiosk_loans=loans,
+                               kiosk_idle_ms=_kiosk_idle_seconds() * 1000)
+
+    @app.route("/kiosk/reset", methods=["POST"])
+    def kiosk_reset():
+        if not _kiosk_enabled():
+            return "Kiosk disabled", 404
+        _kiosk_clear_member()
+        flash("รีเซ็ตเรียบร้อย", "success")
+        return redirect(url_for("kiosk_page"))
+
+    @app.route("/kiosk/reset", methods=["GET"])
+    def kiosk_reset_get():
+        if not _kiosk_enabled():
+            return "Kiosk disabled", 404
+        _kiosk_clear_member()
+        return redirect(url_for("kiosk_page"))
+
+    @app.route("/kiosk/resolve", methods=["POST"])
+    def kiosk_resolve():
+        if not _kiosk_enabled():
+            return jsonify({"ok": False, "message": "ปิดการใช้งานตู้บริการ"}), 404
+        # simple throttle per session/ip-less bucket
+        key = "kiosk_resolve"
+        if throttle.is_locked(key):
+            return jsonify({"ok": False, "message": "กรุณารอสักครู่แล้วลองใหม่"}), 429
+        data = request.get_json(silent=True) or {}
+        payload = (data.get("payload") or "").strip()
+        try:
+            info = member_identity.resolve_scanned(payload)
+        except Exception as exc:
+            throttle.record_failure(key)
+            msg = getattr(exc, "args", ["ไม่สามารถระบุตัวตนได้"])[0]
+            return jsonify({"ok": False, "message": str(msg)}), 400
+        throttle.record_success(key)
+        session["kiosk_member_id"] = info["member_id"]
+        session["kiosk_member_label"] = f"{info.get('name','')} ({info.get('grade','')})"
+        _kiosk_touch()
+        return jsonify({"ok": True})
+
+    @app.route("/kiosk/borrow", methods=["POST"])
+    def kiosk_borrow():
+        if not _kiosk_enabled():
+            return "Kiosk disabled", 404
+        _kiosk_touch()
+        km = _kiosk_member_context()
+        if not km:
+            flash("กรุณาระบุตัวตนสมาชิกก่อน", "error")
+            return redirect(url_for("kiosk_page"))
+        book = _kiosk_find_book(request.form.get("book_code"))
+        if not book:
+            flash("ไม่พบหนังสือจากรหัสที่ระบุ", "error")
+            return redirect(url_for("kiosk_page"))
+        borrow_date = datetime.now().strftime("%Y-%m-%d")
+        due = (datetime.now() + timedelta(days=int(settings.get("default_loan_days") or 7))).strftime("%Y-%m-%d")
+        try:
+            borrow_repo.try_borrow(km["id"], book[0], borrow_date, due)
+            flash(f"ยืมสำเร็จ: {book[1]} — {book[2]} (กำหนดคืน {due})", "success")
+        except BorrowError as exc:
+            flash(str(exc), "error")
+        except Exception:
+            flash("ไม่สามารถบันทึกการยืมได้", "error")
+        _kiosk_touch()
+        return redirect(url_for("kiosk_page"))
+
+    @app.route("/kiosk/return", methods=["POST"])
+    def kiosk_return():
+        if not _kiosk_enabled():
+            return "Kiosk disabled", 404
+        _kiosk_touch()
+        km = _kiosk_member_context()
+        if not km:
+            flash("กรุณาระบุตัวตนสมาชิกก่อน", "error")
+            return redirect(url_for("kiosk_page"))
+        book = _kiosk_find_book(request.form.get("book_code"))
+        if not book:
+            flash("ไม่พบหนังสือจากรหัสที่ระบุ", "error")
+            return redirect(url_for("kiosk_page"))
+        rec = borrow_repo.fetchone(
+            "SELECT id FROM borrow_log WHERE member_id = ? AND book_id = ? AND returned = 0 "
+            "ORDER BY id DESC LIMIT 1", (km["id"], book[0]))
+        if not rec:
+            flash("ไม่พบรายการยืมของหนังสือเล่มนี้สำหรับสมาชิกคนนี้", "error")
+            return redirect(url_for("kiosk_page"))
+        try:
+            borrow_repo.try_return(rec[0])
+            flash(f"คืนสำเร็จ: {book[1]} — {book[2]}", "success")
+        except BorrowError as exc:
+            flash(str(exc), "error")
+        except Exception:
+            flash("ไม่สามารถบันทึกการคืนได้", "error")
+        _kiosk_touch()
+        return redirect(url_for("kiosk_page"))
+
+    # ── Inventory Audit (admin) ───────────────────────────
+    @app.route("/inventory-audit")
+    @login_required
+    def inventory_audit_page():
+        svc = InventoryAuditService()
+        audit_id = request.args.get("audit_id", type=int)
+        audit = None
+        counts = None
+        shelf_missing_books = []
+        on_loan_books = []
+        recent_scans = []
+        resolutions = []
+        if audit_id:
+            report = None
+            try:
+                report = svc.report(audit_id)
+            except Exception:
+                report = None
+            if report:
+                audit = report["audit"]
+                counts = report["counts"]
+                shelf_missing_books = report.get("shelf_missing_books", [])
+                on_loan_books = report.get("on_loan_books", [])
+                recent_scans = report.get("recent_scans", [])
+                resolutions = report.get("resolutions", [])
+        runs = svc.repo.list_recent(limit=20)
+        return render_template("inventory_audit.html",
+                               audit=audit, counts=counts, runs=runs,
+                               shelf_missing_books=shelf_missing_books,
+                               on_loan_books=on_loan_books,
+                               recent_scans=recent_scans,
+                               resolutions=resolutions)
+
+    @app.route("/inventory-audit/create", methods=["POST"])
+    @login_required
+    def inventory_audit_create():
+        svc = InventoryAuditService()
+        name = _clean(request.form.get("name"), 120) or "การตรวจนับ"
+        location = _clean(request.form.get("location"), 120)
+        try:
+            aid = svc.create_session(name, location, session.get("username", "admin"))
+            flash(f"เริ่มรอบตรวจนับ #{aid} แล้ว", "success")
+            return redirect(url_for("inventory_audit_page", audit_id=aid))
+        except Exception as exc:
+            flash(f"ไม่สามารถเริ่มรอบตรวจนับได้: {exc}", "error")
+            return redirect(url_for("inventory_audit_page"))
+
+    @app.route("/inventory-audit/<int:audit_id>/status", methods=["POST"])
+    @login_required
+    def inventory_audit_status(audit_id):
+        svc = InventoryAuditService()
+        status = _clean(request.form.get("status"), 20)
+        try:
+            svc.set_status(audit_id, status, session.get("username", "admin"))
+            flash("อัปเดตสถานะรอบตรวจนับแล้ว", "success")
+        except Exception as exc:
+            flash(f"ไม่สามารถอัปเดตสถานะได้: {exc}", "error")
+        return redirect(url_for("inventory_audit_page", audit_id=audit_id))
+
+    @app.route("/inventory-audit/<int:audit_id>/scan", methods=["POST"])
+    @login_required
+    def inventory_audit_scan(audit_id):
+        svc = InventoryAuditService()
+        data = request.get_json(silent=True) or {}
+        raw = (data.get("raw") or request.form.get("raw") or "").strip()
+        try:
+            result = svc.scan(audit_id, raw, session.get("username", "admin"))
+            result["counts"] = svc.repo.progress(audit_id)["counts"]
+            return jsonify(result)
+        except Exception as exc:
+            return jsonify({"ok": False, "outcome": "error", "message": str(exc)}), 400
+
+    @app.route("/inventory-audit/<int:audit_id>/resolve", methods=["POST"])
+    @login_required
+    def inventory_audit_resolve(audit_id):
+        svc = InventoryAuditService()
+        book_id = request.form.get("book_id", type=int)
+        scan_id = request.form.get("scan_id", type=int)
+        resolution = _clean(request.form.get("resolution"), 40)
+        note = _clean(request.form.get("note"), 200)
+        try:
+            svc.resolve(audit_id, book_id, scan_id, resolution, note, session.get("username", "admin"))
+            flash("บันทึกการจัดการแล้ว", "success")
+        except Exception as exc:
+            flash(f"ไม่สามารถบันทึกการจัดการได้: {exc}", "error")
+        return redirect(url_for("inventory_audit_page", audit_id=audit_id))
+
+    @app.route("/inventory-audit/<int:audit_id>/export")
+    @login_required
+    def inventory_audit_export(audit_id):
+        svc = InventoryAuditService()
+        try:
+            csv_text = svc.export_csv(audit_id)
+        except Exception as exc:
+            flash(f"ไม่สามารถส่งออกได้: {exc}", "error")
+            return redirect(url_for("inventory_audit_page", audit_id=audit_id))
+        buf = io.BytesIO(csv_text.encode("utf-8"))
+        buf.seek(0)
+        return send_file(buf, mimetype="text/csv; charset=utf-8",
+                         as_attachment=True, download_name=f"inventory_audit_{audit_id}.csv")
 
     # ── API endpoints ─────────────────────────────────────
     @app.route("/api/stats")

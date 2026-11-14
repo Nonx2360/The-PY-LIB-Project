@@ -2,13 +2,13 @@
 
 # THE PY-LIB
 
-**ระบบบริหารห้องสมุดโรงเรียนครบวงจร — แอปเดสก์ท็อป, เว็บสำหรับผู้ดูแล และหน้าสมาชิกส่วนบุคคล**
-QR ประจำตัวเข้ารหัส AES-256-GCM (รวมตั๋วหมุนเวียนแบบมีอายุ) • ยืม-คืน atomic • 198 การทดสอบ + CI
+**ระบบบริหารห้องสมุดโรงเรียนครบวงจร — แอปเดสก์ท็อป, เว็บสำหรับผู้ดูแล หน้าสมาชิก และตู้บริการตนเอง (Kiosk)**
+QR ประจำตัวเข้ารหัส AES-256-GCM (รวมตั๋วหมุนเวียนแบบมีอายุ) • ยืม-คืน atomic • จองหนังสือ (คิว/ข้อเสนอ) • ย้ายปีการศึกษา • ตรวจนับหนังสือ • 214 การทดสอบ + CI
 
 [![CI](https://github.com/Nonx2360/The-PY-LIB-Project/actions/workflows/ci.yml/badge.svg)](https://github.com/Nonx2360/The-PY-LIB-Project/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/Python-3.10%2B-306998?logo=python&logoColor=FFD43B)
 ![Platform](https://img.shields.io/badge/Desktop-Windows%2010%2B-0078D6?logo=windows&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-198%20passing-2EA44F)
+![Tests](https://img.shields.io/badge/tests-214%20passing-2EA44F)
 ![License](https://img.shields.io/badge/license-MIT-8A6BE8)
 
 </div>
@@ -56,7 +56,7 @@ THE PY-LIB คือระบบจัดการห้องสมุดที
                                         │
                               ┌─────────▼─────────┐
                               │   SQLite (db/)    │
-                              └───────────────────┘  user_version v1→v4 อัตโนมัติ
+                              └───────────────────┘  user_version v1→v7 อัตโนมัติ (idempotent)
 ```
 
 **เมทริกซ์สิทธิ์** — ทุกหน้าถูกกั้นชัดเจนว่าใครเห็นอะไร:
@@ -91,8 +91,23 @@ Session ของผู้ดูแลและสมาชิกเป็น ke
 - **หยุดให้บริการ → ลบถาวรแบบ 2 ขั้น** (retire → purge) ประวัติถูกเก็บอย่างถูกต้องเสมอ
 - Import Excel ออนเว็บสูงสุด 5,000 แถว/ไฟล์ พร้อมแม่แบบดาวน์โหลด รายงานแถวซ้ำ/ไม่สมบูรณ์รายตัว
 - หน้าแดชบอร์ด Chart.js (ยืม 14 วัน, เข้า-ออก 7 วัน, สัดส่วนสถานะหนังสือ)
+- **ย้ายปีการศึกษา / เลื่อนชั้น (Academic Year Migration)** — ตัวอย่าง (dry-run) อ่านอย่างเดียวก่อนเสมอ, ตรวจทานรายบุคคล (เลื่อนชั้น/คงเดิม/จบการศึกษา/ออก/ตรวจสอบเอง), ส่งออก CSV, ยืนยันด้วยข้อความพิมพ์, สำรองฐานข้อมูล+ตรวจสอบก่อนบันทึก, ทำงานแบบทรานแซกชันเดียวพร้อมบันทึกประวัติ (ไม่เขียนทับประวัติยืม/เข้าออกเดิม, รหัสสมาชิกคงเดิม; ย้อนกลับโดยกู้คืนจากไฟล์สำรอง)
+- **ตรวจนับหนังสือ (Inventory Audit)** — เปิด/พัก/ทำต่อ/ปิดรอบตรวจนับ, สแกน/กรอกรหัส (resolve ฝั่งเซิร์ฟเวอร์), จับซ้ำ/ไม่รู้จัก, แยก "กำลังยืม" ออกจาก "ขาดจากชั้น", บันทึกการจัดการความคลาดเคลื่อนและส่งออกรายงาน — เป็นการกระทบยอดเท่านั้น (ไม่เปลี่ยนสถานะ/ลบ/ทำให้หายอัตโนมัติ)
+- **การจองหนังสือ (Reservations)** — จองแบบรายเล่ม คิว FIFO ชัดเจน, เมื่อคืน/ว่างจะสร้างข้อเสนอ (offer) พร้อมวันหมดเวลาแบบธุรกรรมปลอดภัย, สมาชิก/เจ้าหน้าที่ต้อง "รับ/ยืม" อย่างชัดเจน (ไม่มีการยืมอัตโนมัติ), จัดการคิว/ยกเลิกได้จากผู้ดูแลและหน้าสมาชิก
 - **อัปเดตแบบเรียลไทม์ (WebSocket)** — ตารางผู้ดูแล/แดชบอร์ด/หน้าสมาชิกต่ออายุข้อมูลเองโดยไม่ต้องกด F5; การเปลี่ยนจากทั้งเว็บและแอปเดสก์ท็อปถูกตรวจจับผ่าน WebSocket ภายใน ~2 วินาที
 - **ทำงานออฟไลน์สมบูรณ์** — ทุกไลบรารี frontend (SweetAlert2, jQuery + DataTables, Alpine.js, Chart.js, Flatpickr) และฟอนต์ Sarabun/Prompt ถูก pin ไว้ใน repo ไม่มี CDN เลย
+
+### หน้าสมาชิก (Member Portal)
+
+- **เข้าสู่ระบบเอง** ด้วย ชั้น + เลขที่ + PIN ที่ตั้งเอง (เก็บเฉพาะ bcrypt hash)
+- **สถานะแบบอ่านอย่างเดียว แยกหนึ่งหน้าต่อโมดูล**: QR ประจำตัว (หมุนเวียน v3), หนังสือที่กำลังยืม, รายการคืนล่าสุด, ประวัติการเข้าใช้ห้องสมุด และ **การจองหนังสือ** (ดูคิว/ข้อเสนอ, จองตามรหัส, รับหนังสือเมื่อถึงคิว, ยกเลิก)
+- **QR หมุนเวียน (ตั๋ว v3)** — เปลี่ยนเองตามรอบเวลา; ภาพถ่าย QR เก่า ๆ ใช้ไม่ได้เมื่อรอบเปลี่ยน
+- เปิดใช้งานครั้งแรกแบบ 2 ขั้น, จำกัดล็อกอินผิด, ควบคุมส่วนกลางได้
+
+### ตู้บริการตนเอง (Self-service Kiosk)
+
+- เส้นทางแยก `/kiosk` (session แยกจากผู้ดูแล/หน้าสมาชิก) สำหรับยืม-คืนด้วยตนเอง: ระบุตัวตนด้วยสแกนบัตรสมาชิก, สแกน/กรอกรหัสหนังสือ, ใช้บริการยืม-คืนแบบอะตอมมิกเดียวกับระบบหลัก
+- รีเซ็ตอัตโนมัติเมื่อไม่ใช้งาน, จำกัดการพยายามสแกน, และแสดงข้อมูลเท่าที่จำเป็น (ไม่เปิดหน้า/สิทธิ์ผู้ดูแล)
 
 ### หน้าสมาชิก (Member Portal)
 
@@ -160,6 +175,9 @@ venv\Scripts\python -c "from web.app import create_app; create_app().run(port=50
 | รอบเปลี่ยน QR สมาชิก | ช่วงเวลาต่อรอบของตั๋ว v3 (clamp 1–72 ชม.) | 12 ชั่วโมง |
 | เผื่อรอบข้างเคียง | จำนวนรอบเผื่อสำหรับนาฬิกาคลาดเคลื่อน (clamp 0–2) | 1 รอบ |
 | รับ QR บัตรเดิม | ยังรับบัตรพลาสติก/กระดาษแบบไม่มีอายุ — แนะนำปิดเมื่อสมาชิกเปิดใช้งานครบ | เปิด |
+| เปิดตู้บริการตนเอง (Kiosk) | เปิด/ปิดเส้นทาง `/kiosk` | เปิด |
+| เวลาหมดอายุการไม่ใช้งาน Kiosk | รีเซ็ต session อัตโนมัติเมื่อไม่ใช้งาน (วินาที) | 90 |
+| อายุข้อเสนอการจอง (ชั่วโมง) | เมื่อหนังสือว่างและถึงคิว จะเสนอให้รับภายในเวลานี้ (ต้องรับ/ยืมจริง) | 48 |
 
 ค่าตัวเลขถูก clamp ที่เซิร์ฟเวอร์เสมอ (`min`/`max` ของฟอร์มเป็น UX เท่านั้น) และหน้าเว็บแยกฟอร์มบันทึกเป็นกลุ่ม general / member_portal เพื่อไม่ให้กล่องติ๊กที่ถูกละเว้นลบค่าอีกกลุ่ม
 
@@ -168,13 +186,17 @@ venv\Scripts\python -c "from web.app import create_app; create_app().run(port=50
 | โซน | เส้นทาง | วิธี | บทบาท |
 |---|---|---|---|
 | ยืนยันตัวตน | `/login`, `/logout` | GET/POST, GET | ผู้ดูแล |
-| หน้าผู้ดูแล | `/`, `/members`, `/books`, `/borrow`, `/return`, `/history`, `/access`, `/settings` | GET | ผู้ดูแล |
-| API ตาราง | `/api/members`, `/api/books`, `/api/history`, `/api/stats`, `/api/analytics` | GET | ผู้ดูแล |
+| หน้าผู้ดูแล | `/`, `/members`, `/books`, `/borrow`, `/return`, `/history`, `/access`, `/academic-year-migration`, `/inventory-audit`, `/reservations`, `/settings` | GET | ผู้ดูแล |
+| API ตาราง/สถิติ | `/api/members`, `/api/books`, `/api/history`, `/api/stats`, `/api/analytics` | GET | ผู้ดูแล |
 | เขียนผู้ดูแล | `/members/add`, `/members/<id>/delete`, `/members/<id>/activation-code`, `/members/<id>/reset-pin`, `/members/bulk`, `/books/add`, `/books/import`, `/books/template`, `/books/<id>/delete`, `/books/<id>/retire`, `/books/<id>/restore`, `/books/bulk` | POST | ผู้ดูแล |
+| ย้ายปีการศึกษา | `/academic-year-migration`, `/academic-year-migration/export`, `/academic-year-migration/apply` | GET/POST | ผู้ดูแล (preview + สำรองก่อนบันทึก) |
+| ตรวจนับหนังสือ | `/inventory-audit`, `/inventory-audit/create`, `/inventory-audit/<id>/status`, `/inventory-audit/<id>/scan`, `/inventory-audit/<id>/resolve`, `/inventory-audit/<id>/export` | GET/POST | ผู้ดูแล (กระทบยอดเท่านั้น) |
+| การจอง (ผู้ดูแล) | `/reservations` | GET/POST | ผู้ดูแล |
 | สแกน | `/scan/resolve` | POST | ผู้ดูแล (ถอดรหัส QR ทุกชนิดฝั่งเซิร์ฟเวอร์) |
 | ช่องเรียลไทม์ | `/admin/ws`, `/member/ws` | GET (WebSocket) | ผู้ดูแล / สมาชิกตาม session (good only same-origin) |
 | เข้า-ออก | `/access/record` | POST | ผู้ดูแล |
-| หน้าสมาชิก | `/member/login`, `/member/logout`, `/member`, `/member/loans`, `/member/returns`, `/member/access`, `/member/qr.png`, `/member/activate`, `/member/activate/scan`, `/member/activate/code`, `/member/activate/set-pin` | GET/POST | สมาชิก (session แยกจากผู้ดูแล) |
+| หน้าสมาชิก | `/member/login`, `/member/logout`, `/member`, `/member/loans`, `/member/returns`, `/member/access`, `/member/reservations`, `/member/qr.png`, `/member/activate`, `/member/activate/scan`, `/member/activate/code`, `/member/activate/set-pin` | GET/POST | สมาชิก (session แยกจากผู้ดูแล) |
+| ตู้บริการตนเอง (Kiosk) | `/kiosk`, `/kiosk/resolve`, `/kiosk/borrow`, `/kiosk/return`, `/kiosk/reset` | GET/POST | สาธารณะ/จุดบริการ (session แยก, ไม่ใช่ผู้ดูแล) |
 | ไฟล์ | `/assets/<path>` | GET | — |
 
 ทุก POST ต้องมี CSRF token (ในฟอร์มหรือ header `X-CSRF-Token`) และเส้นทางที่กีดกันบทบาทจะคืน 302 ไปหน้าล็อกอินที่ต้องการหากไม่มีสิทธิ์
@@ -210,7 +232,7 @@ venv\Scripts\python tools\regenerate_member_cards.py      # สร้างบ�
 | ล็อกอินสมาชิกคืน 429 | ล้มเหลว 5 ครั้ง/15 นาทีต่อชุดตัวตน รอครบกำหนด หรือให้ผู้ดูแลล้าง PIN |
 | บัตรเก่าถอดรหัสไม่ได้ทั้งระบบ | `.env` ไม่ตรงกันระหว่างเครื่อง — จัดชุด (`.env` + `db/` + `assets/`) ให้ตรงกัน หรือรัน `tools/rotate_qr_key.py` |
 | หน้าสมาชิกทั้งระบบคืน 404 | มีคนปิด "เปิดหน้าสมาชิก" ในการตั้งค่า |
-| ตารางเว็บช้าหรือว่าง | ตรวจว่า migration รันครบ (`PRAGMA user_version` = 4) และ `/api/*` คืนข้อมูล |
+| ตารางเว็บช้าหรือว่าง | ตรวจว่า migration รันครบ (`PRAGMA user_version` = 7) และ `/api/*` คืนข้อมูล |
 | ลืมรหัสผ่าน admin | เปิดไฟล์ `db/INITIAL_ADMIN_PASSWORD.txt`; เคสอื่นดู `docs/SECURITY.md` |
 
 ## รูปแบบความปลอดภัย
@@ -227,7 +249,7 @@ venv\Scripts\python tools\regenerate_member_cards.py      # สร้างบ�
 | เซสชันเว็บ | คุกกี้ HttpOnly + SameSite=Lax อายุ 4 ชั่วโมง, CSRF token ทุก POST (เทียบแบบ constant-time), ข้อความล้มเหลวกัน user enumeration |
 | ขอบเขตสิทธิ์ | หน้าสมาชิกอ่านเฉพาะข้อมูลของตนเอง ไม่มีเส้นทางแก้ไขข้อมูลใด ๆ; ปิดทั้งโดเมนได้ (kill switch) |
 | ความถูกต้องข้อมูล | FK เปิดทุก connection, `books.code UNIQUE`, `borrow_log.returned CHECK (0,1)`, ยืม/คืนเป็นทรานแซกชัน `BEGIN IMMEDIATE` เดียว, parameterized SQL ทุกจุด |
-| Migrations | `PRAGMA user_version` v1→v4 (constraints → ดัชนี bulk-import → หน้าสมาชิก: pin_hash + ตารางรหัสเปิดใช้งาน) — รันทุกบูตและ idempotent |
+| Migrations | `PRAGMA user_version` v1→v7 (constraints → ดัชนี bulk-import → หน้าสมาชิก → placements/ย้ายปีการศึกษา → ตรวจนับหนังสือ → การจองหนังสือ) — รันทุกบูตและ idempotent |
 | การบันทึก log | ไม่เขียนข้อมูลส่วนบุคคลลง log (เฉพาะ id และจำนวน); เคส payload ที่ล้มเหลวคืนเฉพาะผลลัพธ์ไม่สะท้อนเนื้อหาจริง |
 
 เอกสารเชิงปฏิบัติฉบับเต็ม (รูปแบบ payload ทุกเวอร์ชัน, runbook หมุนเวียนคีย์, deployment HTTPS, เมทริกซ์การทดสอบความปลอดภัย): [`docs/SECURITY.md`](docs/SECURITY.md)
@@ -239,11 +261,15 @@ SQLite3 ไฟล์เดียว (`db/library.db`) — โครงสร้�
 | ตาราง | เนื้อหา |
 |---|---|
 | `admin_users` | ผู้ดูแลระบบ (bcrypt, ไม่มีดีฟอลต์) |
-| `members` | ชื่อ, ชั้น, เลขที่, QR, วันหมดอายุ, **`pin_hash`** (v4 — NULL จนสมาชิกเปิดใช้งาน); badge ชั้น+เลขที่ ต้องไม่ซ้ำ |
+| `members` | ชื่อ, ชั้น, เลขที่, QR, วันหมดอายุ, **`pin_hash`** (v4), **`status`** (v5: active/graduated/left); badge ชั้น+เลขที่ คือข้อมูลปัจจุบัน |
 | `books` | รหัส (**UNIQUE**), ชื่อ, สถานะ `ว่าง` / `ยืมแล้ว` / `หยุดให้บริการ` |
-| `borrow_log` | ทรานแซกชันยืม-คืน — `returned CHECK (0,1)`, FK ไป members/books, ดัชนีสำหรับ bulk (v3) |
+| `borrow_log` | ทรานแซกชันยืม-คืน — `returned CHECK (0,1)`, FK ไป members/books (ประวัติไม่ถูกเขียนทับโดยการย้ายปีการศึกษา) |
 | `access_log` | บันทึกเข้า-ออกห้องสมุด |
-| `member_activation_codes` | (v4) แฮช SHA-256 ของรหัสเปิดใช้งาน, อายุ 15 นาที, `code_hash UNIQUE`, `used_at` บันทึกเวลาที่ถูกใช้ (ใช้ได้ครั้งเดียว) |
+| `member_activation_codes` | (v4) แฮช SHA-256 ของรหัสเปิดใช้งาน, อายุ 15 นาที, ใช้ได้ครั้งเดียว |
+| `academic_years`, `member_placements` | (v5) ปีการศึกษาและ placement ปัจจุบัน/ประวัติของสมาชิก (หนึ่ง current ต่อสมาชิก) |
+| `academic_year_migrations`, `academic_year_migration_items` | (v5) บันทึกการย้ายปีการศึกษาและผลรายบุคคล (audit trail) |
+| `inventory_audits`, `inventory_audit_scans`, `inventory_audit_resolutions` | (v6) รอบตรวจนับ, การสแกน/ผลกระทบยอด, และการจัดการความคลาดเคลื่อน |
+| `book_reservations` | (v7) คิวจองรายเล่ม (waiting/offered/fulfilled/cancelled/expired) พร้อมเวลาเสนอ/หมดเวลา |
 
 ## การทดสอบและ CI
 
@@ -252,7 +278,7 @@ venv\Scripts\python -m unittest discover -s tests        # Windows
 venv/bin/python -m unittest discover -s tests            # Linux/Mac
 ```
 
-**198 กรณีทดสอบ รวม 19 ไฟล์** — ครอบคลุม crypto (v1/v2/v3), ตัวตรวจตัวตน (member identity), หน้าสมาชิกครบวงจร, ช่องสัญญาณ WebSocket เรียลไทม์, repository และการยืม-คืนแบบ atomic, migration v1→v4, สำรอง/กู้คืน, bulk + import Excel, API ตาราง server-side, guard ของเว็บ (CSRF/throttle/session/สิทธิ์) และ offline-safety
+**214 กรณีทดสอบ** — ครอบคลุม crypto (v1/v2/v3), ตัวตรวจตัวตน (member identity), หน้าสมาชิก, ช่องสัญญาณ WebSocket เรียลไทม์, repository และการยืม-คืนแบบ atomic, migration v1→v7, สำรอง/กู้คืน, bulk + import Excel, API ตาราง server-side, guard ของเว็บ (CSRF/throttle/session/สิทธิ์), ย้ายปีการศึกษา, ตรวจนับหนังสือ, การจองหนังสือ และ offline-safety
 
 CI (GitHub Actions) รัน 3 งานแยกกันทุก push/PR:
 
@@ -405,7 +431,10 @@ THE-PY-LIB/
 - [ ] สร้างบัตร/รายงาน PDF จากเว็บ (ปัจจุบันทำได้บนเดสก์ท็อปเท่านั้น)
 - [ ] สมาชิกเปลี่ยน PIN ของตนเองในหน้าของตัว (ปัจจุบันรีเซ็ตโดยผู้ดูแล)
 - [ ] สำรองตามเวลาอัตโนมัติ + นโยบายเก็บสำรองย้อนหลัง
-- [ ] จุดเช็กสถานะแบบไม่ต้องล็อกอิน (kiosk)
+- [x] ตู้บริการตนเอง (self-service kiosk) — ยืม/คืนด้วยตนเองแบบแยก session, รีเซ็ตอัตโนมัติ, ใช้บริการอะตอมมิกเดียวกับระบบหลัก
+- [x] ย้ายปีการศึกษา / เลื่อนชั้น (Academic Year Migration) — preview/ยืนยัน/สำรองก่อนบันทึก, เก็บประวัติการย้าย
+- [x] ตรวจนับหนังสือ (Inventory Audit) — กระทบยอด, แยกกำลังยืมจากขาดหาย, รายงาน/จัดการความคลาดเคลื่อน
+- [x] การจองหนังสือ (Book Reservation) — คิว FIFO, ข้อเสนอพร้อมหมดเวลา, รับ/ยืมจริงอย่างชัดเจน (ไม่มีการยืมอัตโนมัติ)
 
 พบบั๊กหรือมีข้อเสนอ เปิด [issue](https://github.com/Nonx2360/The-PY-LIB-Project/issues) ได้โดยตรง
 

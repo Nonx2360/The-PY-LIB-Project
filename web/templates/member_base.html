@@ -38,6 +38,9 @@
                 <a href="{{ url_for('member_access') }}" class="{% if nav_ep == 'member_access' %}active{% endif %}"{% if nav_ep == 'member_access' %} aria-current="page"{% endif %}>
                     <svg width="16" height="16" aria-hidden="true"><use href="#icon-clock"/></svg> ประวัติการเข้าใช้ห้องสมุด
                 </a>
+                <a href="{{ url_for('member_reservations') }}" class="{% if nav_ep == 'member_reservations' %}active{% endif %}"{% if nav_ep == 'member_reservations' %} aria-current="page"{% endif %}>
+                    <svg width="16" height="16" aria-hidden="true"><use href="#icon-book"/></svg> การจองหนังสือ
+                </a>
             </nav>
             <p class="member-sidebar-foot">ระบบห้องสมุด THE PY-LIB</p>
         </aside>

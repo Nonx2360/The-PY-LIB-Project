@@ -101,6 +101,62 @@ class TestMigrations(unittest.TestCase):
         self.assertIn("idx_borrow_log_book", names)
         self.assertIn("idx_borrow_log_member", names)
 
+    # ---------------- v5: academic-year placements + migration audit ----------------
+
+    def test_upgrade_adds_member_status_and_academic_tables(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(members)").fetchall()}
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            indexes = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='index'").fetchall()}
+        finally:
+            conn.close()
+        self.assertIn("status", cols)
+        for table in ("academic_years", "member_placements",
+                      "academic_year_migrations", "academic_year_migration_items"):
+            self.assertIn(table, tables)
+        self.assertIn("idx_member_placements_current", indexes)
+
+    def test_upgrade_adds_inventory_audit_tables(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        finally:
+            conn.close()
+        for table in ("inventory_audits", "inventory_audit_scans",
+                      "inventory_audit_resolutions"):
+            self.assertIn(table, tables)
+
+    def test_upgrade_adds_reservation_tables(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        finally:
+            conn.close()
+        self.assertIn("book_reservations", tables)
+
+    def test_legacy_member_gets_baseline_current_placement(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            status = conn.execute(
+                "SELECT status FROM members WHERE id=1").fetchone()[0]
+            row = conn.execute(
+                "SELECT mp.grade, mp.number, mp.status, ay.label "
+                "FROM member_placements mp "
+                "LEFT JOIN academic_years ay ON ay.id = mp.academic_year_id "
+                "WHERE mp.member_id=1 AND mp.status='current'").fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(status, "active")
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], "ม.1/1")
+        self.assertEqual(row[1], "12")
+        self.assertEqual(row[2], "current")
+
     def _user_version(self):
         conn = sqlite3.connect(self.db_path)
         try:
@@ -283,6 +339,21 @@ class TestFreshInstallLayout(unittest.TestCase):
         self.assertIn("pin_hash", cols)
         self.assertIn("member_activation_codes", tables)
         self.assertIn("idx_activation_member", indexes)
+
+    def test_fresh_layout_carries_academic_year_tables(self):
+        conn = sqlite3.connect(self.db_path)
+        try:
+            cols = {r[1] for r in conn.execute("PRAGMA table_info(members)").fetchall()}
+            tables = {r[0] for r in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+        finally:
+            conn.close()
+        self.assertIn("status", cols)
+        for table in ("academic_years", "member_placements",
+                      "academic_year_migrations", "academic_year_migration_items",
+                      "inventory_audits", "inventory_audit_scans",
+                      "inventory_audit_resolutions", "book_reservations"):
+            self.assertIn(table, tables)
 
 
 if __name__ == "__main__":

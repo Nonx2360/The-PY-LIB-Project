@@ -158,15 +158,11 @@ Store that password; the file is for reference only.
       `member_id`/`book_id` `NOT NULL`, and FKs declared (legacy NULL/invalid
       `returned` values are coerced to `1` — returned);
   * v3 adds bulk-import indexes on `borrow_log(member_id, book_id)`;
-  * v4 (member portal era) adds:
-    - `members.pin_hash` — bcrypt hash of the member's own portal PIN.
-      It starts and stays `NULL` until the member personally activates; no
-      migration ever invents credentials, and legacy members keep working
-      pin-less;
-    - `member_activation_codes` — one-time codes issued by admins, stored as
-      **SHA-256 hashes only** (15-minute expiry, `used_at` burn timestamp,
-      unique `code_hash`), with `idx_activation_member` for the reset-PIN purge;
-  * Migrations are idempotent and safe to run on every boot.
+  * v4 (member portal era) adds `members.pin_hash` (bcrypt, NULL until personal activation) and `member_activation_codes` (SHA-256 hashes, 15-min expiry, single-use);
+  * v5 (academic-year migration) adds `members.status` and tables for academic years, member placements (one current per member), and migration runs/items (audit trail). Promotions keep stable member IDs and do not rewrite historical borrow/access rows; upgrades seed a baseline current placement.
+  * v6 (inventory audit) adds inventory audit sessions, scans, and discrepancy resolutions (reconciliation only — no automatic destructive/status changes).
+  * v7 (reservations) adds `book_reservations` for copy-level FIFO queues/offers with explicit states and offer expiry.
+  * Migrations are idempotent and safe to run on every boot (fresh install == upgraded).
 * **Foreign keys** are turned ON (`PRAGMA foreign_keys=ON`) for *every*
   connection created by the repositories (`db/repositories/base_repo.py`).
 * **`busy_timeout=5000`** on every connection to tolerate transient locks.
@@ -238,35 +234,37 @@ Implemented in `web/app.py`, `web/csrf.py`, `web/throttle.py`:
 
 Implemented in `web/app.py` + `db/repositories/member_repo.py`:
 
-* **Key separation:** the member session lives in a different session key
-  (`member_id`) than the admin one (`logged_in`). A member session cannot open
-  any admin route (every admin route still bounces `login_required`), and an
-  admin session does not silently inherit member pages.
-* **Member login:** grade+number+PIN against `members.pin_hash` (bcrypt).
-  Errors are generic — "something didn't match", never "no such member".
-  Throttled 5 failures / 15 min per (IP, `member:<grade>:<number>`, key kept
-  separate from the admin throttle counters).
-* **First activation is a ceremony, not a form:**
-  1. Proof of identity: scanning **one's own printed card** (the physical card
-     the school issued) or an admin-issued one-time code;
-  2. then a 10-minute, server-side activation window to set a PIN (6–64 chars).
-  Only afterwards does `pin_hash` become non-NULL.
-* **Takeover guard:** every activation path (scan, code, atomic
-  `activate_with_pin`) refuses when `pin_hash IS NOT NULL` — an admin code
-  cannot hijack an already-activated account. Admin "ล้าง PIN" clears the
-  member back to the activation ceremony and burns any outstanding codes in
-  the same transaction.
-* **One-time codes:** issued codes are stored SHA-256-hashed, expire in 15
-  minutes, are claimed atomically on first use, and are shown to the admin
-  exactly once (dialog) — the plaintext is never persisted or logged.
-* **Portal is read-only by design:** loans, due dates, return history and
-  access history of the member themself, plus their own rotating QR.
-  No borrow/return/modify endpoints exist behind the member session.
-* **Rotating QR endpoint** (`/member/qr.png`): session-bound, rate-limited
-  (30 PNGs/minute per member session), served `no-store`, generated in memory
-  (no artifact written to disk).
-* **Kill switch:** `member_portal_enabled=False` makes every `/member…` route
-  answer 404.
+* **Key separation:** the member session lives in a different session key (`member_id`) than the admin one (`logged_in`). A member session cannot open any admin route, and an admin session does not silently inherit member pages.
+* **Member login:** grade+number+PIN against `members.pin_hash` (bcrypt). Errors are generic; throttled 5 failures / 15 min per (IP, `member:<grade>:<number>`).
+* **First activation ceremony:** scan own card or admin-issued one-time code, then a 10-minute server-side window to set a PIN (6–64 chars). Takeover guarded when `pin_hash` is already set.
+* **One-time codes:** stored SHA-256-hashed, 15-minute expiry, single-use, shown once; admin PIN reset burns leftover codes atomically.
+* **Portal is read-only by design:** own status/loans/returns/access/QR plus reservation actions (reserve/cancel/explicit claim). No silent loans; claiming performs an explicit borrow through shared atomic services and server-side checks.
+* **Rotating QR endpoint** (`/member/qr.png`): session-bound, rate-limited, `no-store`, generated in memory.
+* **Kill switch:** `member_portal_enabled=False` makes every `/member…` route answer 404.
+
+### 8.2 Self-service kiosk (`/kiosk`) hardening
+
+Implemented in `web/app.py` + `web/templates/kiosk.html`:
+
+* **Isolated session/context:** kiosk uses its own session keys (identified member + idle timestamp) and does **not** grant or require admin/member-portal privileges; admin routes remain `login_required`.
+* **Minimal exposure:** shows only the information needed for the current identified transaction; no admin data/PII listings.
+* **Identity and actions:** member identity resolved server-side via the shared member-identity resolver; borrow/return execute through shared atomic repository services (same invariants/limits) with server-side book resolution.
+* **Safety controls:** CSRF on POSTs, throttled identity resolve attempts, automatic idle reset/timeout (`kiosk_idle_timeout_seconds`, default 90s), and enable/disable via `kiosk_enabled`.
+* **Reservation-aware:** borrowing respects active offers/holds (no bypass of reservation rules).
+
+### 8.3 Reservations and circulation integrity
+
+Implemented in `db/repositories/borrow_repo.py`, `db/repositories/reservation_repo.py`, `services/reservation_service.py`:
+
+* **Explicit states:** copy-level reservations use `waiting` → `offered` → `fulfilled` (or `cancelled`/`expired`) with timestamps/expiry.
+* **Deterministic FIFO:** queues are ordered per copy; when a copy becomes available, the next eligible waiter is promoted to an **offer** (not a loan) transaction-safely.
+* **No silent loans:** returns and expiries never create `borrow_log` rows; the offered member (or staff flow) must explicitly claim/borrow.
+* **Offer enforcement:** an active unexpired offer blocks borrowing by others; claiming/borrowing by the offered member fulfills the offer atomically in the borrow transaction.
+
+### 8.4 Administrative workflows
+
+* **Academic Year Migration:** admin-only preview (read-only), reviewed plan, explicit typed confirmation, duplicate-success guard, and **verified backup preflight** before a single-transaction apply with per-item audit records. Stable member IDs and historical loan/access records are preserved (no retroactive loan-time class rewrite). No unsafe automatic undo — recovery is restore-from-backup.
+* **Inventory Audit:** admin-only reconciliation sessions (create/pause/resume/complete/cancel), server-side scan resolve, duplicate/unknown handling, and separation of on-loan copies from shelf-missing discrepancies. Audits record findings/resolutions and do **not** auto-delete or auto-mutate book/member/loan state.
 
 ## 9. Deploying the web UI beyond one machine
 
@@ -321,3 +319,7 @@ Answered by `tests/` (unittest):
 | Admin PIN reset locks the member out and burns leftover codes | `test_member_portal` |
 | Settings groups save independently; portal off → /member 404 | `test_member_portal` |
 | v3 ticket scan via /scan/resolve: valid 200, stale 400 expired, unknown 404 | `test_web_scan` |
+| v5–v7 migrations (placements/migration audit, inventory audit, reservations) + idempotent fresh/upgrade parity | `test_migrations` |
+| Academic year migration: read-only preview, atomic apply, stable IDs + history preserved, duplicate-run guard, graduate/left/manual handling | `test_academic_year_migration` |
+| Inventory audit: scan found/duplicate/unknown, on-loan separate from shelf-missing, no auto destructive/status mutation, status transitions, resolutions recorded | `test_inventory_audit` |
+| Reservations: FIFO offer on return (no silent loan), offer blocks others, explicit claim fulfills offer, expiry/cancel promote next in queue | `test_reservations` |

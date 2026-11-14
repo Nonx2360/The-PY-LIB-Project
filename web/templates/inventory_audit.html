@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% block title %}ตรวจนับหนังสือ — THE PY-LIB{% endblock %}
+{% block page_title %}ตรวจนับหนังสือ (Inventory Audit){% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-book-open"/></svg> เริ่มรอบตรวจนับใหม่</h3>
+    </div>
+    <div class="card-body">
+        <p class="text-muted" style="margin-bottom:10px;">
+            ตรวจนับเพื่อกระทบยอดเท่านั้น — ระบบจะไม่เปลี่ยนสถานะ/ลบ/ทำให้หายอัตโนมัติ รายการที่กำลังยืมจะแยกจาก "ขาดหายจากชั้น"
+        </p>
+        <form method="POST" action="{{ url_for('inventory_audit_create') }}" class="form-inline" style="gap:10px;flex-wrap:wrap;">
+            {{ csrf_field }}
+            <div class="form-group">
+                <label>ชื่อรอบตรวจนับ</label>
+                <input type="text" name="name" placeholder="เช่น ตรวจนับปลายภาค" required>
+            </div>
+            <div class="form-group">
+                <label>ตำแหน่ง/ขอบเขต (ถ้ามี)</label>
+                <input type="text" name="location" placeholder="เช่น ชั้น A / ห้องสมุด">
+            </div>
+            <button type="submit" class="btn btn-primary">เริ่มตรวจนับ</button>
+        </form>
+    </div>
+</div>
+
+{% if audit %}
+<div class="card" id="auditCard" data-audit-id="{{ audit.id }}" data-status="{{ audit.status }}">
+    <div class="card-header">
+        <h3>รอบ: {{ audit.name }} <small class="text-muted">(#{{ audit.id }}, {{ audit.status }})</small></h3>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            {% if audit.status == 'in_progress' %}
+            <form method="POST" action="{{ url_for('inventory_audit_status', audit_id=audit.id) }}">{{ csrf_field }}<input type="hidden" name="status" value="paused"><button class="btn btn-secondary btn-sm">พักรอบ</button></form>
+            <form method="POST" action="{{ url_for('inventory_audit_status', audit_id=audit.id) }}" data-confirm="ปิดรอบตรวจนับนี้เป็นเสร็จสิ้น?">{{ csrf_field }}<input type="hidden" name="status" value="completed"><button class="btn btn-success btn-sm">เสร็จสิ้นรอบ</button></form>
+            {% elif audit.status == 'paused' %}
+            <form method="POST" action="{{ url_for('inventory_audit_status', audit_id=audit.id) }}">{{ csrf_field }}<input type="hidden" name="status" value="in_progress"><button class="btn btn-secondary btn-sm">ทำต่อ</button></form>
+            <form method="POST" action="{{ url_for('inventory_audit_status', audit_id=audit.id) }}" data-confirm="ปิดรอบตรวจนับนี้เป็นเสร็จสิ้น?">{{ csrf_field }}<input type="hidden" name="status" value="completed"><button class="btn btn-success btn-sm">เสร็จสิ้นรอบ</button></form>
+            {% endif %}
+            {% if audit.status in ['in_progress','paused'] %}
+            <form method="POST" action="{{ url_for('inventory_audit_status', audit_id=audit.id) }}" data-confirm="ยกเลิก/เลิกทำรอบนี้? (ข้อมูลสแกนที่บันทึกไว้ยังคงอยู่)">{{ csrf_field }}<input type="hidden" name="status" value="cancelled"><button class="btn btn-ghost btn-sm">ยกเลิก</button></form>
+            {% endif %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('inventory_audit_export', audit_id=audit.id) }}">ส่งออก CSV</a>
+        </div>
+    </div>
+    <div class="card-body">
+        <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:12px;">
+            <span class="badge">ทั้งหมดในขอบเขต: {{ counts.expected }}</span>
+            <span class="badge badge-success">พบแล้ว (ไม่ซ้ำ): {{ counts.found_unique }}</span>
+            <span class="badge">ยังไม่สแกน: {{ counts.not_scanned }}</span>
+            <span class="badge badge-danger">ขาดจากชั้น (ไม่รวมที่ยืม): {{ counts.shelf_missing }}</span>
+            <span class="badge">กำลังยืม (แยกต่างหาก): {{ counts.on_loan_total }}</span>
+            <span class="badge">สแกนไม่รู้จัก: {{ counts.unknown_scans }}</span>
+            <span class="badge">สแกนซ้ำ: {{ counts.duplicate_scans }}</span>
+            <span class="badge">ความคืบหน้า: {{ counts.progress_pct }}%</span>
+        </div>
+
+        {% if audit.status == 'in_progress' %}
+        <div class="scan-row" style="margin-bottom:8px;">
+            <button type="button" id="scanBtn" class="btn btn-secondary"><svg width="16" height="16" class="icon-inline"><use href="#icon-book"/></svg> สแกนหนังสือ</button>
+            <span id="scanStatus" class="scan-status" style="display:none"></span>
+        </div>
+        <video id="scanVideo" class="scan-preview" autoplay muted playsinline></video>
+        <canvas id="scanCanvas" hidden></canvas>
+        <form id="manualScanForm" class="form-inline" style="gap:8px;margin:8px 0 14px;flex-wrap:wrap;" onsubmit="return false;">
+            <div class="form-group">
+                <label>รหัส/ข้อมูลที่สแกน (กรอกเอง)</label>
+                <input type="text" id="manualCode" placeholder="รหัสหนังสือ หรือข้อมูลจาก QR">
+            </div>
+            <button type="button" class="btn btn-primary" id="manualScanBtn">บันทึกการสแกน</button>
+        </form>
+        <div id="scanResult" class="alert" style="display:none;margin-bottom:12px;"></div>
+        {% else %}
+        <div class="alert alert-warning" style="margin-bottom:12px;">รอบนี้ไม่ได้อยู่ในสถานะกำลังดำเนินการ ({{ audit.status }}) — เปิด "ทำต่อ" เพื่อสแกนเพิ่ม</div>
+        {% endif %}
+
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:16px;">
+            <div>
+                <h4>ขาดจากชั้น (ควรตรวจสอบ) — ไม่รวมที่กำลังยืม</h4>
+                {% if shelf_missing_books %}
+                <div class="table-wrap"><table class="data-table"><thead><tr><th>รหัส</th><th>ชื่อ</th><th>จัดการ</th></tr></thead><tbody>
+                {% for b in shelf_missing_books %}
+                <tr>
+                    <td>{{ b[1] }}</td><td>{{ b[2] }}</td>
+                    <td>
+                        <form method="POST" action="{{ url_for('inventory_audit_resolve', audit_id=audit.id) }}" style="display:inline-flex;gap:4px;flex-wrap:wrap;">
+                            {{ csrf_field }}
+                            <input type="hidden" name="book_id" value="{{ b[0] }}">
+                            <select name="resolution">
+                                <option value="not_found_recheck">ยังไม่พบ/ตรวจซ้ำ</option>
+                                <option value="flag_investigation">ตั้งค่าสืบสวน</option>
+                                <option value="location_corrected">แก้ตำแหน่งแล้ว</option>
+                                <option value="note">บันทึกหมายเหตุ</option>
+                            </select>
+                            <input type="text" name="note" placeholder="หมายเหตุ" style="width:120px">
+                            <button class="btn btn-ghost btn-sm">บันทึก</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody></table></div>
+                {% else %}<p class="text-muted">ไม่มีรายการขาดจากชั้น (ตามข้อมูลปัจจุบัน)</p>{% endif %}
+            </div>
+            <div>
+                <h4>กำลังถูกยืม (แยกจากขาดหาย)</h4>
+                {% if on_loan_books %}
+                <div class="table-wrap"><table class="data-table"><thead><tr><th>รหัส</th><th>ชื่อ</th></tr></thead><tbody>
+                {% for b in on_loan_books %}<tr><td>{{ b[1] }}</td><td>{{ b[2] }}</td></tr>{% endfor %}
+                </tbody></table></div>
+                {% else %}<p class="text-muted">ไม่มีรายการยืมค้างในขอบเขตที่ยังไม่สแกน</p>{% endif %}
+            </div>
+        </div>
+
+        <h4 style="margin-top:14px;">การสแกนล่าสุด</h4>
+        <div class="table-wrap"><table class="data-table" id="recentScans"><thead><tr><th>เวลา</th><th>ผล</th><th>รหัส</th><th>ชื่อ</th><th>ข้อมูลดิบ</th></tr></thead><tbody>
+            {% for s in recent_scans %}
+            <tr><td>{{ s[7] }}</td><td>{{ s[5] }}</td><td>{{ s[2] or '' }}</td><td>{{ s[3] or '' }}</td><td class="text-muted">{{ s[4] or '' }}</td></tr>
+            {% endfor %}
+            {% if not recent_scans %}<tr><td colspan="5" class="text-center text-muted">ยังไม่มีการสแกน</td></tr>{% endif %}
+        </tbody></table></div>
+
+        <h4 style="margin-top:14px;">บันทึกการจัดการความคลาดเคลื่อน</h4>
+        {% if resolutions %}
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>เวลา</th><th>หนังสือ</th><th>การจัดการ</th><th>หมายเหตุ</th><th>ผู้ทำ</th></tr></thead><tbody>
+            {% for r in resolutions %}
+            <tr><td>{{ r[8] }}</td><td>{{ r[2] or '' }} {{ r[3] or '' }}</td><td>{{ r[5] }}</td><td>{{ r[6] or '' }}</td><td>{{ r[7] or '' }}</td></tr>
+            {% endfor %}
+        </tbody></table></div>
+        {% else %}<p class="text-muted">ยังไม่มีบันทึกการจัดการ</p>{% endif %}
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header"><h3>รอบตรวจนับล่าสุด</h3></div>
+    <div class="card-body">
+        {% if not runs %}<p class="text-muted">ยังไม่มีรอบตรวจนับ</p>{% else %}
+        <div class="table-wrap"><table class="data-table"><thead><tr><th>เวลา</th><th>ชื่อ</th><th>สถานะ</th><th>ทั้งหมด</th><th></th></tr></thead><tbody>
+        {% for r in runs %}
+        <tr>
+            <td>{{ r[7] }}</td><td>{{ r[1] }}{% if r[2] %} <small class="text-muted">({{ r[2] }})</small>{% endif %}</td>
+            <td>{{ r[4] }}</td><td>{{ r[6] }}</td>
+            <td><a class="btn btn-ghost btn-sm" href="{{ url_for('inventory_audit_page', audit_id=r[0]) }}">เปิด</a></td>
+        </tr>
+        {% endfor %}
+        </tbody></table></div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/jsQR.js') }}"></script>
+<script src="{{ url_for('static', filename='js/admin_live.js') }}" data-topic="inventory_audit"></script>
+<script>
+(function () {
+    var card = document.getElementById("auditCard");
+    if (!card) return;
+    var auditId = card.getAttribute("data-audit-id");
+    var status = card.getAttribute("data-status");
+    var csrf = (document.querySelector('input[name="csrf_token"]') || {}).value || "";
+
+    function showResult(outcome, msg) {
+        var el = document.getElementById("scanResult");
+        if (!el) return;
+        el.style.display = "block";
+        el.className = "alert " + (outcome === "found" ? "alert-success" : (outcome === "duplicate" || outcome === "retired" ? "alert-warning" : "alert-error"));
+        el.textContent = msg || outcome || "";
+    }
+    function postScan(raw) {
+        if (!raw || status !== "in_progress") return;
+        fetch("{{ url_for('inventory_audit_scan', audit_id=0) }}".replace("/0/", "/" + auditId + "/"), {
+            method: "POST",
+            headers: {"Content-Type": "application/json", "X-CSRF-Token": csrf},
+            body: JSON.stringify({raw: raw})
+        }).then(function (r) { return r.json().then(function(j){ return {okHttp:r.ok, j:j}; }); }).then(function (res) {
+            var data = res.j || {};
+            showResult(data.outcome || (res.okHttp ? "found" : "error"), data.message || (res.okHttp ? "บันทึกแล้ว" : "ผิดพลาด"));
+            setTimeout(function(){ location.reload(); }, 700);
+        }).catch(function () { showResult("error", "ไม่สามารถบันทึกการสแกนได้"); });
+    }
+    var manualBtn = document.getElementById("manualScanBtn");
+    if (manualBtn) manualBtn.addEventListener("click", function(){
+        var v = (document.getElementById("manualCode") || {}).value || "";
+        if (v.trim()) postScan(v.trim());
+    });
+    var input = document.getElementById("manualCode");
+    if (input) input.addEventListener("keydown", function(e){ if(e.key==="Enter"){ e.preventDefault(); var v=input.value||""; if(v.trim()) postScan(v.trim()); }});
+
+    // lightweight camera scanner for book codes/QR payloads
+    var btn = document.getElementById("scanBtn"), video = document.getElementById("scanVideo"),
+        canvas = document.getElementById("scanCanvas"), statusEl = document.getElementById("scanStatus");
+    if (btn && video && canvas && status === "in_progress") {
+        var stream = null, raf = null, active = false, cooldown = false;
+        function setStatus(msg, err){ if(!statusEl) return; statusEl.textContent=msg||""; statusEl.className="scan-status"+(err?" scan-status-error":""); statusEl.style.display=msg?"inline":"none"; }
+        function stop(){ active=false; if(raf){cancelAnimationFrame(raf); raf=null;} if(stream){stream.getTracks().forEach(function(t){t.stop();}); stream=null;} video.style.display="none"; btn.hidden=false; }
+        function tick(){
+            if(!active) return;
+            if(video.readyState === video.HAVE_ENOUGH_DATA && !cooldown){
+                var w=video.videoWidth,h=video.videoHeight;
+                if(w&&h){ canvas.width=w; canvas.height=h; var ctx=canvas.getContext("2d",{willReadFrequently:true}); ctx.drawImage(video,0,0,w,h);
+                    var frame=ctx.getImageData(0,0,w,h); var code=window.jsQR(frame.data,w,h,{inversionAttempts:"dontInvert"});
+                    if(code && code.data){ cooldown=true; setStatus("กำลังบันทึก..."); postScan(code.data); stop(); return; }
+                }
+            }
+            raf=requestAnimationFrame(tick);
+        }
+        btn.addEventListener("click", function(){
+            if(active) return;
+            if(!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){ setStatus("กล้องใช้ได้เฉพาะ localhost หรือ https:// — กรุณากรอกรหัสเอง", true); return; }
+            btn.hidden=true; video.style.display="block"; setStatus("กำลังเปิดกล้อง...");
+            navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}).then(function(s){ stream=s; video.srcObject=s; active=true; tick(); }).catch(function(){ stop(); setStatus("ไม่สามารถเปิดกล้องได้", true); });
+        });
+    }
+})();
+</script>
+{% endblock %}

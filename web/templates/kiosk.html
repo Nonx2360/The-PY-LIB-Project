@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ตู้บริการตนเอง — THE PY-LIB</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='vendor/sweetalert2.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="kiosk-body">
+    {% include 'icons.svg' %}
+    <main class="kiosk-shell" style="max-width:720px;margin:0 auto;padding:20px;">
+        <header style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <h1 style="margin:0;font-size:1.4rem;">ตู้บริการยืม-คืนหนังสือ (Kiosk)</h1>
+            <form method="POST" action="{{ url_for('kiosk_reset') }}">{{ csrf_field }}<button class="btn btn-ghost btn-sm" type="submit">เริ่มใหม่/ออก</button></form>
+        </header>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}{% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}{% endif %}{% endwith %}
+
+        {% if not kiosk_member %}
+        <div class="card"><div class="card-body">
+            <h3>1) ระบุตัวตนสมาชิก</h3>
+            <p class="text-muted">สแกนบัตร/QR ของสมาชิกเพื่อทำรายการ (ระบบจะแสดงเฉพาะข้อมูลที่จำเป็นและรีเซ็ตอัตโนมัติเมื่อไม่ใช้งาน)</p>
+            <div class="scan-row" style="margin-bottom:8px;">
+                <button type="button" id="scanMemberBtn" class="btn btn-secondary">สแกนบัตรสมาชิก</button>
+                <span id="scanMemberStatus" class="scan-status" style="display:none"></span>
+            </div>
+            <video id="scanMemberVideo" class="scan-preview" autoplay muted playsinline></video>
+            <canvas id="scanMemberCanvas" hidden></canvas>
+            <p class="text-muted" style="font-size:12px;margin-top:8px;">หากกล้องใช้ไม่ได้ กรุณาติดต่อเจ้าหน้าที่ที่เคาน์เตอร์</p>
+        </div></div>
+        {% else %}
+        <div class="card"><div class="card-body">
+            <h3>สมาชิก: {{ kiosk_member.label }}</h3>
+            <p class="text-muted">ยืมอยู่ {{ kiosk_member.active }} / {{ kiosk_member.max_books }} เล่ม{% if kiosk_member.overdue %} — <strong>มีรายการค้างส่ง (ไม่สามารถยืมเพิ่มได้)</strong>{% endif %}</p>
+            <p class="text-muted" style="font-size:12px;">ระบบจะรีเซ็ตอัตโนมัติเมื่อไม่มีการใช้งาน</p>
+        </div></div>
+
+        <div class="card"><div class="card-body">
+            <h3>ยืมหนังสือ</h3>
+            <form method="POST" action="{{ url_for('kiosk_borrow') }}" class="form-inline" style="gap:8px;flex-wrap:wrap;">
+                {{ csrf_field }}
+                <input type="text" name="book_code" placeholder="รหัสหนังสือ / ข้อมูลจาก QR" required id="borrowCode">
+                <button class="btn btn-primary" type="submit" {% if kiosk_member.overdue or kiosk_member.active >= kiosk_member.max_books %}disabled{% endif %}>ยืม</button>
+            </form>
+        </div></div>
+
+        <div class="card"><div class="card-body">
+            <h3>คืนหนังสือ (ของสมาชิกคนนี้)</h3>
+            <form method="POST" action="{{ url_for('kiosk_return') }}" class="form-inline" style="gap:8px;flex-wrap:wrap;">
+                {{ csrf_field }}
+                <input type="text" name="book_code" placeholder="รหัสหนังสือ / ข้อมูลจาก QR" required id="returnCode">
+                <button class="btn btn-success" type="submit">คืน</button>
+            </form>
+            {% if kiosk_loans %}
+            <div style="margin-top:10px;">
+                <h4>รายการที่ยืมอยู่</h4>
+                <ul>
+                {% for l in kiosk_loans %}
+                    <li>{{ l.code }} — {{ l.title }} (กำหนดคืน {{ l.due }})</li>
+                {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+        </div></div>
+        {% endif %}
+    </main>
+
+    <script src="{{ url_for('static', filename='vendor/sweetalert2.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/jsQR.js') }}"></script>
+    <script>
+    (function(){
+        var idleMs = {{ kiosk_idle_ms }};
+        var idleTimer = null;
+        function resetIdle(){ if(idleTimer) clearTimeout(idleTimer); idleTimer = setTimeout(function(){ window.location = "{{ url_for('kiosk_reset_get') }}"; }, idleMs); }
+        ["click","keydown","touchstart","mousemove"].forEach(function(e){ document.addEventListener(e, resetIdle, {passive:true}); });
+        resetIdle();
+
+        var btn = document.getElementById("scanMemberBtn"), video = document.getElementById("scanMemberVideo"),
+            canvas = document.getElementById("scanMemberCanvas"), statusEl = document.getElementById("scanMemberStatus");
+        if(!btn) return;
+        var csrf = (document.querySelector('input[name="csrf_token"]') || {}).value || "";
+        var stream=null, raf=null, active=false;
+        function setStatus(msg, err){ if(!statusEl) return; statusEl.textContent=msg||""; statusEl.className="scan-status"+(err?" scan-status-error":""); statusEl.style.display=msg?"inline":"none"; }
+        function stop(){ active=false; if(raf){cancelAnimationFrame(raf); raf=null;} if(stream){stream.getTracks().forEach(function(t){t.stop();}); stream=null;} if(video) video.style.display="none"; btn.hidden=false; }
+        function resolve(payload){
+            setStatus("กำลังตรวจสอบ...");
+            fetch("{{ url_for('kiosk_resolve') }}", {method:"POST", headers:{"Content-Type":"application/json","X-CSRF-Token":csrf}, body: JSON.stringify({payload: payload})})
+            .then(function(r){ return r.json().then(function(j){ return {code:r.status,j:j};}); })
+            .then(function(res){ var j=res.j||{}; if(j.ok){ window.location.reload(); return; } setStatus(j.message||"ไม่สามารถระบุตัวตนได้", true); stop(); })
+            .catch(function(){ setStatus("เกิดข้อผิดพลาด", true); stop(); });
+        }
+        function tick(){ if(!active) return; if(video.readyState===video.HAVE_ENOUGH_DATA){ var w=video.videoWidth,h=video.videoHeight; if(w&&h){ canvas.width=w; canvas.height=h; var ctx=canvas.getContext("2d",{willReadFrequently:true}); ctx.drawImage(video,0,0,w,h); var frame=ctx.getImageData(0,0,w,h); var code=window.jsQR(frame.data,w,h,{inversionAttempts:"dontInvert"}); if(code&&code.data){ stop(); resolve(code.data); return; } } } raf=requestAnimationFrame(tick); }
+        btn.addEventListener("click", function(){ if(active) return; if(!window.isSecureContext||!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){ setStatus("กล้องใช้ได้เฉพาะ localhost หรือ https:// — กรุณาติดต่อเจ้าหน้าที่", true); return; } btn.hidden=true; video.style.display="block"; setStatus("กำลังเปิดกล้อง..."); navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}}).then(function(s){ stream=s; video.srcObject=s; active=true; tick(); }).catch(function(){ stop(); setStatus("ไม่สามารถเปิดกล้องได้", true); }); });
+    })();
+    </script>
+</body>
+</html>

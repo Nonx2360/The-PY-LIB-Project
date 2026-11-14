@@ -18,6 +18,13 @@ DEFAULTS = {
     "member_qr_rotation_hours": 12,    # each QR window lasts this many hours
     "member_qr_grace_steps": 1,        # accepted window drift (current ± grace)
     "accept_static_card_qr": True,     # printed cards keep working until off'd
+
+    # self-service kiosk (isolated session, no admin/member-portal access)
+    "kiosk_enabled": True,
+    "kiosk_idle_timeout_seconds": 90,
+
+    # reservations (copy-level FIFO offers; no silent loans)
+    "reservation_offer_hours": 48,
 }
 
 _settings = dict(DEFAULTS)

@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% block title %}ย้ายปีการศึกษา — THE PY-LIB{% endblock %}
+{% block page_title %}ย้ายปีการศึกษา{% endblock %}
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h3><svg width="18" height="18" class="icon-inline"><use href="#icon-users"/></svg> เลื่อนชั้น/ย้ายปีการศึกษา (ตัวอย่างก่อนบันทึก)</h3>
+    </div>
+    <div class="card-body">
+        <p class="text-muted" style="margin-bottom:12px;">
+            สร้างตัวอย่างการเปลี่ยนแปลงก่อนเสมอ — ระบบจะสำรองฐานข้อมูลและตรวจสอบก่อนบันทึกจริง
+            ประวัติการยืม/เข้าออกเดิมของสมาชิกจะไม่ถูกแก้ไข และรหัสสมาชิก (ID) คงเดิม
+        </p>
+        <form method="GET" action="{{ url_for('academic_year_migration_page') }}" class="form-inline" style="gap:12px;flex-wrap:wrap;">
+            <div class="form-group">
+                <label>ปีการศึกษาต้นทาง (ปัจจุบัน)</label>
+                <input type="text" name="source" value="{{ source }}" placeholder="เช่น 2568" required>
+            </div>
+            <div class="form-group">
+                <label>ปีการศึกษาปลายทาง (ใหม่)</label>
+                <input type="text" name="target" value="{{ target }}" placeholder="เช่น 2569" required>
+            </div>
+            <button type="submit" class="btn btn-secondary">สร้างตัวอย่าง (ไม่บันทึก)</button>
+            {% if preview %}
+            <a class="btn btn-ghost btn-sm" href="{{ url_for('academic_year_migration_export', source=source, target=target) }}">
+                <svg width="14" height="14" class="icon-inline"><use href="#icon-download"/></svg> ส่งออกตัวอย่าง CSV
+            </a>
+            {% endif %}
+        </form>
+    </div>
+</div>
+
+{% if preview %}
+<div class="card">
+    <div class="card-header">
+        <h3>ตัวอย่างผลลัพธ์ — {{ preview.total }} รายการ</h3>
+    </div>
+    <div class="card-body">
+        {% if preview.duplicate_success %}
+        <div class="alert alert-warning" style="margin-bottom:12px;">
+            เคยมีการย้ายปีการศึกษา {{ source }} → {{ target }} สำเร็จไปแล้ว หากต้องการทำซ้ำให้ติ๊ก "ยืนยันทำซ้ำ" ด้านล่าง
+        </div>
+        {% endif %}
+        <div style="display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px;">
+            <span class="badge">เลื่อนชั้น: {{ preview.counts.promote }}</span>
+            <span class="badge">จบการศึกษา: {{ preview.counts.graduate }}</span>
+            <span class="badge">ออก: {{ preview.counts.left }}</span>
+            <span class="badge">คงเดิม: {{ preview.counts.keep }}</span>
+            <span class="badge">ตรวจสอบเอง: {{ preview.counts.manual }}</span>
+        </div>
+
+        <form method="POST" action="{{ url_for('academic_year_migration_apply') }}" id="aymForm"
+              data-confirm="ยืนยันย้ายปีการศึกษา — ระบบจะสำรองฐานข้อมูลก่อน แล้วบันทึกตามรายการที่เลือก (ไม่สามารถย้อนกลับอัตโนมัติได้ ใช้การกู้คืนจากไฟล์สำรองหากจำเป็น)">
+            {{ csrf_field }}
+            <input type="hidden" name="source_label" value="{{ source }}">
+            <input type="hidden" name="target_label" value="{{ target }}">
+            <input type="hidden" name="plan_json" id="aymPlanJson" value="[]">
+
+            <div class="table-wrap">
+                <table class="data-table" id="aymTable">
+                    <thead>
+                        <tr>
+                            <th>เลือก</th>
+                            <th>ชื่อ</th>
+                            <th>ชั้น/ห้องเดิม</th>
+                            <th>เลขที่</th>
+                            <th>สถานะ</th>
+                            <th>การดำเนินการ</th>
+                            <th>ชั้น/ห้องปลายทาง</th>
+                            <th>เหตุผล</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for it in preview.items %}
+                        <tr data-mid="{{ it.member_id }}"
+                            data-name="{{ it.name|e }}"
+                            data-cgrade="{{ it.current_grade|e }}"
+                            data-cnum="{{ it.current_number|e }}"
+                            data-mstatus="{{ it.member_status|e }}"
+                            data-reason="{{ it.reason|e }}">
+                            <td><input type="checkbox" class="aym-sel" {% if it.selected %}checked{% endif %}></td>
+                            <td>{{ it.name }}</td>
+                            <td>{{ it.current_grade }}</td>
+                            <td>{{ it.current_number }}</td>
+                            <td>{{ it.member_status }}</td>
+                            <td>
+                                <select class="aym-action">
+                                    {% for v, label in [('promote','เลื่อนชั้น'),('keep','คงเดิม'),('graduate','จบการศึกษา'),('left','ออกจากระบบ'),('manual','ตรวจสอบเอง/ไม่เปลี่ยน')] %}
+                                    <option value="{{ v }}" {% if it.action == v %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                            </td>
+                            <td><input type="text" class="aym-grade" value="{{ it.proposed_grade }}" style="width:110px"></td>
+                            <td class="text-muted">{{ it.reason }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="form-inline" style="margin-top:14px;gap:12px;flex-wrap:wrap;align-items:flex-end;">
+                <div class="form-group">
+                    <label>พิมพ์ <strong>{{ source }}-&gt;{{ target }}</strong> เพื่อยืนยัน</label>
+                    <input type="text" name="confirm_text" placeholder="{{ source }}->{{ target }}" required>
+                </div>
+                {% if preview.duplicate_success %}
+                <label style="display:flex;align-items:center;gap:6px;">
+                    <input type="checkbox" name="force_duplicate" value="1"> ยืนยันทำซ้ำ (เคยสำเร็จแล้ว)
+                </label>
+                {% endif %}
+                <button type="submit" class="btn btn-primary">สำรองข้อมูลและย้ายปีการศึกษา</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header"><h3>ประวัติการย้ายปีการศึกษา (ล่าสุด)</h3></div>
+    <div class="card-body">
+        {% if not runs %}
+        <p class="text-muted">ยังไม่มีประวัติ</p>
+        {% else %}
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead><tr><th>เวลา</th><th>จาก → ไป</th><th>ผู้ดำเนินการ</th><th>สถานะ</th><th>สรุป</th></tr></thead>
+                <tbody>
+                {% for r in runs %}
+                <tr>
+                    <td>{{ r.created_at }}</td>
+                    <td>{{ r.source_label }} → {{ r.target_label }}</td>
+                    <td>{{ r.actor or '-' }}</td>
+                    <td>{{ r.status }}</td>
+                    <td class="text-muted">
+                        เลื่อนชั้น {{ r.summary.get('promoted',0) }}, จบ {{ r.summary.get('graduate', r.summary.get('graduated',0)) }},
+                        ออก {{ r.summary.get('left',0) }}, คงเดิม {{ r.summary.get('kept',0) }},
+                        ตรวจสอบ {{ r.summary.get('manual',0) }}, ข้าม {{ r.summary.get('skipped',0) }}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+    var form = document.getElementById("aymForm");
+    if (!form) return;
+    form.addEventListener("submit", function () {
+        var rows = document.querySelectorAll("#aymTable tbody tr");
+        var plan = [];
+        rows.forEach(function (tr) {
+            plan.push({
+                member_id: parseInt(tr.getAttribute("data-mid"), 10),
+                name: tr.getAttribute("data-name") || "",
+                current_grade: tr.getAttribute("data-cgrade") || "",
+                current_number: tr.getAttribute("data-cnum") || "",
+                member_status: tr.getAttribute("data-mstatus") || "",
+                proposed_grade: (tr.querySelector(".aym-grade") || {}).value || "",
+                proposed_number: tr.getAttribute("data-cnum") || "",
+                action: (tr.querySelector(".aym-action") || {}).value || "manual",
+                selected: !!(tr.querySelector(".aym-sel") || {}).checked,
+                reason: tr.getAttribute("data-reason") || ""
+            });
+        });
+        document.getElementById("aymPlanJson").value = JSON.stringify(plan);
+    });
+})();
+</script>
+{% endblock %}

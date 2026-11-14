@@ -1,0 +1,40 @@
+{% extends "member_base.html" %}
+{% block title %}การจองหนังสือ — THE PY-LIB{% endblock %}
+{% block member_content %}
+<section class="card">
+    <div class="card-header"><h3>การจองหนังสือของฉัน</h3></div>
+    <div class="card-body">
+        <p class="member-page-sub">จองแบบรายเล่ม (คิวตามลำดับ) — เมื่อถึงคิวระบบจะเสนอให้รับหนังสือภายในเวลาที่กำหนด ต้องกด "รับหนังสือ" เพื่อยืมจริง (ไม่มีการยืมอัตโนมัติ)</p>
+        <form method="POST" action="{{ url_for('member_reservations') }}" class="form-inline" style="gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+            {{ csrf_field }}
+            <input type="hidden" name="action" value="reserve">
+            <input type="text" name="book_code" placeholder="รหัสหนังสือที่ต้องการจอง" required>
+            <button class="btn btn-primary" type="submit">จองหนังสือ</button>
+        </form>
+        <div class="member-table-wrap">
+            <table class="member-table">
+                <thead><tr><th>หนังสือ</th><th>รหัส</th><th>สถานะ</th><th>เสนอเมื่อ</th><th>หมดเวลารับ</th><th>จัดการ</th></tr></thead>
+                <tbody>
+                {% for r in reservations %}
+                    <tr>
+                        <td>{{ r[3] }}</td>
+                        <td>{{ r[2] }}</td>
+                        <td>{% if r[4]=='offered' %}<span class="badge badge-success">พร้อมรับ</span>{% elif r[4]=='waiting' %}<span class="badge">รอคิว</span>{% else %}{{ r[4] }}{% endif %}</td>
+                        <td>{{ r[6] or '-' }}</td>
+                        <td>{{ r[7] or '-' }}</td>
+                        <td>
+                            {% if r[4]=='offered' %}
+                            <form method="POST" action="{{ url_for('member_reservations') }}" style="display:inline">{{ csrf_field }}<input type="hidden" name="action" value="claim"><input type="hidden" name="reservation_id" value="{{ r[0] }}"><button class="btn btn-success btn-sm" type="submit">รับหนังสือ (ยืม)</button></form>
+                            {% endif %}
+                            <form method="POST" action="{{ url_for('member_reservations') }}" style="display:inline">{{ csrf_field }}<input type="hidden" name="action" value="cancel"><input type="hidden" name="reservation_id" value="{{ r[0] }}"><button class="btn btn-ghost btn-sm" type="submit">ยกเลิก</button></form>
+                        </td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="6" class="text-center text-muted">ยังไม่มีการจอง</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endblock %}

@@ -28,7 +28,7 @@ from datetime import datetime
 
 from config.constants import DB_PATH
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 7
 
 _CREDS_FILE = "INITIAL_ADMIN_PASSWORD.txt"
 _KNOWN_DEFAULT_PASSWORD = "admin123"
@@ -64,7 +64,7 @@ def _tables(conn):
 
 
 def _create_final_schema(conn):
-    """Layout used for fresh installs (v2): includes integrity constraints."""
+    """Layout used for fresh installs: current schema including migrations."""
     conn.execute('''CREATE TABLE IF NOT EXISTS admin_users (
             username TEXT PRIMARY KEY,
             password TEXT NOT NULL)''')
@@ -77,7 +77,8 @@ def _create_final_schema(conn):
             expire_date TEXT,
             qrcode_data TEXT,
             qrcode_path TEXT,
-            pin_hash TEXT)''')
+            pin_hash TEXT,
+            status TEXT NOT NULL DEFAULT 'active')''')
     conn.execute(_BOOKS)
     conn.execute(_BORROW_LOG)
     conn.execute('''CREATE TABLE IF NOT EXISTS access_log (
@@ -94,10 +95,151 @@ def _create_final_schema(conn):
             expires_at TEXT NOT NULL,
             used_at TEXT,
             FOREIGN KEY (member_id) REFERENCES members (id))''')
+    _create_academic_year_tables(conn)
+    _create_inventory_audit_tables(conn)
+    _create_reservation_tables(conn)
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_books_code ON books(code)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_activation_member "
                  "ON member_activation_codes(member_id)")
     _create_bulk_indexes(conn)
+
+
+def _create_academic_year_tables(conn):
+    """v5: explicit academic years, member placements, and migration audit."""
+    conn.execute('''CREATE TABLE IF NOT EXISTS academic_years (
+            id INTEGER PRIMARY KEY,
+            label TEXT NOT NULL UNIQUE,
+            start_date TEXT,
+            end_date TEXT,
+            is_active INTEGER NOT NULL DEFAULT 0 CHECK (is_active IN (0, 1)),
+            created_at TEXT NOT NULL)''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS member_placements (
+            id INTEGER PRIMARY KEY,
+            member_id INTEGER NOT NULL,
+            academic_year_id INTEGER,
+            grade TEXT,
+            number TEXT,
+            status TEXT NOT NULL DEFAULT 'current',
+            source TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (member_id) REFERENCES members (id),
+            FOREIGN KEY (academic_year_id) REFERENCES academic_years (id))''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS academic_year_migrations (
+            id INTEGER PRIMARY KEY,
+            source_year_id INTEGER,
+            target_year_id INTEGER,
+            source_label TEXT,
+            target_label TEXT,
+            actor TEXT,
+            status TEXT NOT NULL,
+            summary_json TEXT,
+            created_at TEXT NOT NULL,
+            finished_at TEXT,
+            notes TEXT,
+            FOREIGN KEY (source_year_id) REFERENCES academic_years (id),
+            FOREIGN KEY (target_year_id) REFERENCES academic_years (id))''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS academic_year_migration_items (
+            id INTEGER PRIMARY KEY,
+            migration_id INTEGER NOT NULL,
+            member_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            reason TEXT,
+            before_json TEXT,
+            after_json TEXT,
+            outcome TEXT,
+            created_at TEXT NOT NULL,
+            FOREIGN KEY (migration_id) REFERENCES academic_year_migrations (id),
+            FOREIGN KEY (member_id) REFERENCES members (id))''')
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_member_placements_member "
+                 "ON member_placements(member_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_member_placements_year "
+                 "ON member_placements(academic_year_id)")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_member_placements_current "
+                 "ON member_placements(member_id) WHERE status = 'current'")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_migration_items_run "
+                 "ON academic_year_migration_items(migration_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_migration_items_member "
+                 "ON academic_year_migration_items(member_id)")
+
+
+def _create_inventory_audit_tables(conn):
+    """v6: inventory audit sessions, scans, and discrepancy resolutions."""
+    conn.execute('''CREATE TABLE IF NOT EXISTS inventory_audits (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL,
+            location TEXT,
+            scope TEXT NOT NULL DEFAULT 'all',
+            status TEXT NOT NULL DEFAULT 'in_progress'
+                CHECK (status IN ('in_progress','paused','completed','cancelled')),
+            created_by TEXT,
+            notes TEXT,
+            expected_count INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            completed_at TEXT)''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS inventory_audit_scans (
+            id INTEGER PRIMARY KEY,
+            audit_id INTEGER NOT NULL,
+            book_id INTEGER,
+            raw_value TEXT,
+            outcome TEXT NOT NULL,
+            scanned_by TEXT,
+            scanned_at TEXT NOT NULL,
+            FOREIGN KEY (audit_id) REFERENCES inventory_audits (id),
+            FOREIGN KEY (book_id) REFERENCES books (id))''')
+    conn.execute('''CREATE TABLE IF NOT EXISTS inventory_audit_resolutions (
+            id INTEGER PRIMARY KEY,
+            audit_id INTEGER NOT NULL,
+            book_id INTEGER,
+            scan_id INTEGER,
+            resolution TEXT NOT NULL,
+            note TEXT,
+            actor TEXT,
+            resolved_at TEXT NOT NULL,
+            FOREIGN KEY (audit_id) REFERENCES inventory_audits (id),
+            FOREIGN KEY (book_id) REFERENCES books (id),
+            FOREIGN KEY (scan_id) REFERENCES inventory_audit_scans (id))''')
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_inv_scans_audit "
+                 "ON inventory_audit_scans(audit_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_inv_scans_book "
+                 "ON inventory_audit_scans(audit_id, book_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_inv_res_audit "
+                 "ON inventory_audit_resolutions(audit_id)")
+    # count each real book at most once per audit
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_scan_unique_book "
+                 "ON inventory_audit_scans(audit_id, book_id) "
+                 "WHERE book_id IS NOT NULL AND outcome = 'found'")
+
+
+def _create_reservation_tables(conn):
+    """v7: copy-level reservations with deterministic FIFO offers."""
+    conn.execute('''CREATE TABLE IF NOT EXISTS book_reservations (
+            id INTEGER PRIMARY KEY,
+            book_id INTEGER NOT NULL,
+            member_id INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'waiting'
+                CHECK (status IN ('waiting','offered','fulfilled','cancelled','expired')),
+            created_at TEXT NOT NULL,
+            offered_at TEXT,
+            expires_at TEXT,
+            fulfilled_at TEXT,
+            cancelled_at TEXT,
+            note TEXT,
+            FOREIGN KEY (book_id) REFERENCES books (id),
+            FOREIGN KEY (member_id) REFERENCES members (id))''')
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_res_book_status "
+                 "ON book_reservations(book_id, status, id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_res_member_status "
+                 "ON book_reservations(member_id, status, id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_res_expires "
+                 "ON book_reservations(status, expires_at)")
+
+
+def _migrate_v7(conn, log):
+    """v5/6 -> v7: book reservations (idempotent)."""
+    _create_reservation_tables(conn)
+    if log:
+        log("db: migrated schema v6 -> v7 (book reservations)")
 
 
 def _create_bulk_indexes(conn):
@@ -251,6 +393,54 @@ def _migrate_v4(conn, log):
             "activation codes)")
 
 
+def _migrate_v5(conn, log):
+    """v4 -> v5: academic-year placements and migration audit trail.
+
+    Adds members.status (default 'active') without touching historical
+    borrow/access rows, creates academic year / placement / migration
+    tables, and seeds a baseline "current" placement for every existing
+    member so promotions can be tracked going forward. Idempotent.
+    """
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(members)").fetchall()]
+    if "status" not in cols:
+        conn.execute("ALTER TABLE members ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+    _create_academic_year_tables(conn)
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    baseline = conn.execute(
+        "SELECT id FROM academic_years WHERE label = ?",
+        ("ปัจจุบัน (ก่อนระบบปีการศึกษา)",)).fetchone()
+    if baseline is None:
+        cur = conn.execute(
+            "INSERT INTO academic_years (label, start_date, end_date, is_active, created_at) "
+            "VALUES (?, NULL, NULL, 1, ?)",
+            ("ปัจจุบัน (ก่อนระบบปีการศึกษา)", now))
+        baseline_id = cur.lastrowid
+    else:
+        baseline_id = baseline[0]
+    # one current placement per member, derived from current member fields
+    members = conn.execute(
+        "SELECT id, grade, number FROM members").fetchall()
+    for mid, grade, number in members:
+        has_current = conn.execute(
+            "SELECT 1 FROM member_placements WHERE member_id = ? AND status = 'current'",
+            (mid,)).fetchone()
+        if not has_current:
+            conn.execute(
+                "INSERT INTO member_placements "
+                "(member_id, academic_year_id, grade, number, status, source, created_at) "
+                "VALUES (?, ?, ?, ?, 'current', 'migration_v5_baseline', ?)",
+                (mid, baseline_id, grade, number, now))
+    if log:
+        log("db: migrated schema v4 -> v5 (academic years, placements, migration audit)")
+
+
+def _migrate_v6(conn, log):
+    """v5 -> v6: inventory audit sessions, scans, resolutions (idempotent)."""
+    _create_inventory_audit_tables(conn)
+    if log:
+        log("db: migrated schema v5 -> v6 (inventory audit)")
+
+
 def _apply_migrations(conn, log=None):
     version = conn.execute("PRAGMA user_version").fetchone()[0]
     if version >= SCHEMA_VERSION:
@@ -281,10 +471,27 @@ def _apply_migrations(conn, log=None):
     if version == 3:
         _migrate_v4(conn, log)
         version = 4
+        conn.execute("PRAGMA user_version = 4")
+        if log:
+            log("db: migrated schema v3 -> v4 (member portal: pin_hash + activation codes)")
+    if version == 4:
+        _migrate_v5(conn, log)
+        version = 5
+        conn.execute("PRAGMA user_version = 5")
+        if log:
+            log("db: migrated schema v4 -> v5 (academic-year placements + migration audit)")
+    if version == 5:
+        _migrate_v6(conn, log)
+        version = 6
+        conn.execute("PRAGMA user_version = 6")
+        if log:
+            log("db: migrated schema v5 -> v6 (inventory audit)")
+    if version == 6:
+        _migrate_v7(conn, log)
+        version = 7
         conn.execute(f"PRAGMA user_version = {SCHEMA_VERSION}")
         if log:
-            log(f"db: migrated schema v3 -> v{SCHEMA_VERSION} (member portal: "
-                "pin_hash + activation codes)")
+            log(f"db: migrated schema v6 -> v{SCHEMA_VERSION} (book reservations)")
     # future versions land here
 
 

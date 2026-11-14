@@ -3,9 +3,18 @@ import os
 import sys
 import threading
 import unittest
+from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _harness as harness  # noqa: E402
+
+
+def _future(days=7):
+    return (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+
+
+def _today():
+    return datetime.now().strftime("%Y-%m-%d")
 
 
 class TestBorrowAtomicity(unittest.TestCase):
@@ -54,7 +63,7 @@ class TestBorrowAtomicity(unittest.TestCase):
     def test_borrow_then_return_updates_both_sides(self):
         self._reset()
         rec = self.borrow_repo.try_borrow(self.member, self.book,
-                                          "2026-10-30", "2026-11-06")
+                                          _today(), _future(7))
         self.assertIsNotNone(rec)
         self.assertEqual(self._status(self.book), "ยืมแล้ว")
         returned_book = self.borrow_repo.try_return(rec)
@@ -71,7 +80,7 @@ class TestBorrowAtomicity(unittest.TestCase):
             from db.repositories.borrow_repo import BorrowError
             try:
                 self.borrow_repo.try_borrow(self.member, self.book,
-                                            "2026-10-30", "2026-11-06")
+                                            _today(), _future(7))
                 with results["lock"]:
                     results["ok"] += 1
             except BorrowError:
@@ -99,7 +108,7 @@ class TestBorrowAtomicity(unittest.TestCase):
             # be in the real flow), THEN the member/INSERT step fails -> the
             # transaction must roll back everything.
             self.borrow_repo.try_borrow(9999, self.book,
-                                        "2026-10-30", "2026-11-06")
+                                        _today(), _future(7))
         self.assertEqual(self._status(self.book), "ว่าง",
                          "book status must not stay flipped after a failed borrow")
         count = self.borrow_repo.fetchone("SELECT COUNT(*) FROM borrow_log")[0]
@@ -118,7 +127,7 @@ class TestBorrowAtomicity(unittest.TestCase):
         self.book_repo.update_status(self.book2, "ว่าง")
         with self.assertRaises(BorrowError):
             self.borrow_repo.try_borrow(self.member, self.book2,
-                                        "2026-10-30", "2026-11-06")
+                                        _today(), _future(7))
         self.assertEqual(self._status(self.book2), "ว่าง")
 
     def test_max_books_limit_enforced(self):
@@ -128,10 +137,10 @@ class TestBorrowAtomicity(unittest.TestCase):
         max_books = DEFAULTS["max_books_per_member"]
         for i in range(max_books):
             extra = self.book_repo.add(f"T-9{i:02d}", f"หนังสือ {i}", "ว่าง")
-            self.borrow_repo.try_borrow(self.member, extra, "2026-10-30", "2026-11-06")
+            self.borrow_repo.try_borrow(self.member, extra, _today(), _future(7))
         with self.assertRaises(BorrowError):
             self.borrow_repo.try_borrow(self.member, self.book,
-                                        "2026-10-30", "2026-11-06")
+                                        _today(), _future(7))
         self.assertEqual(self._status(self.book), "ว่าง")
 
     # audit-test: return nonexistent/mismatched record -> rejected w/o side effects
@@ -146,9 +155,9 @@ class TestBorrowAtomicity(unittest.TestCase):
         self._reset()
         # record 1 borrows book1; an attacker-supplied book_id for book2 is IGNORED
         self.borrow_repo.try_borrow(self.member, self.book,
-                                    "2026-10-30", "2026-11-06")
+                                    _today(), _future(7))
         rec2 = self.borrow_repo.try_borrow(self.member, self.book2,
-                                           "2026-10-30", "2026-11-06")
+                                           _today(), _future(7))
         # returning record2 must only free book2
         freed = self.borrow_repo.try_return(rec2)
         self.assertEqual(freed, self.book2)
