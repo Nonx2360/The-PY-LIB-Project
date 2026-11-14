@@ -401,6 +401,12 @@ class BookView(ctk.CTkFrame):
             title="เลือกไฟล์ Excel ที่ต้องการนำเข้า")
         if not filename:
             return
+        # Mirror the web's 8 MB upload cap: refuse a huge file BEFORE parsing
+        # it, with the same "split the file" guidance the web 413 handler uses.
+        if os.path.getsize(filename) > ExcelService.MAX_FILE_BYTES:
+            show_toast(self, "ไฟล์ใหญ่เกิน 8 MB — กรุณาแบ่งการนำเข้าเป็นหลายไฟล์",
+                       "red")
+            return
 
         # Reading the workbook + inserting it (one transaction) can take a
         # few seconds for a 1000-row file; run it on a worker thread so the

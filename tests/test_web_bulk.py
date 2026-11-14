@@ -192,10 +192,49 @@ class TestWebBulk(unittest.TestCase):
         resp = self._upload(buf)
         self.assertIn("รูปแบบไฟล์ Excel ไม่ถูกต้อง", resp.get_data(as_text=True))
 
+    def test_import_rejects_corrupt_xlsx_content(self):
+        # right extension, garbage bytes -> clean Thai read-failure flash,
+        # never a 500 page and never a partial import
+        before = self._book_count()
+        resp = self._upload(io.BytesIO(b"PK\x03\x04 definitely not a zip"),
+                            filename="books.xlsx")
+        self.assertIn("อ่านไฟล์ไม่สำเร็จ กรุณาตรวจสอบรูปแบบไฟล์",
+                      resp.get_data(as_text=True))
+        self.assertEqual(self._book_count(), before)
+
+    def test_import_exactly_5000_rows_accepted(self):
+        # the upper boundary of the documented policy imports in full
+        rows = [(f"MAX-{i:05d}", f"ขอบเขตบน {i}") for i in range(5000)]
+        resp = self._upload(_xlsx(rows))
+        self.assertIn("นำเข้าหนังสือสำเร็จ 5000 เล่ม",
+                      resp.get_data(as_text=True))
+        self.assertEqual(
+            len(harness.query(_env.db_path,
+                              "SELECT 1 FROM books WHERE code LIKE 'MAX-%'")),
+            5000)
+
+    def test_import_numeric_code_cell_normalized(self):
+        # Excel keeps a numeric-looking code as a NUMBER: openpyxl hands us
+        # int 1 -> str(1) == "1". Documented behavior, not a regression —
+        # leading-zero codes must be text cells in the template.
+        from services.excel_service import ExcelService
+        df = pd.DataFrame({"รหัสหนังสือ": [1, "TXT-002"],
+                           "ชื่อเรื่อง": ["เล่มรหัสตัวเลข", "เล่มรหัสข้อความ"]})
+        buf = io.BytesIO()
+        df.to_excel(buf, index=False)
+        buf.seek(0)
+        rows = ExcelService.read_books_from_excel(buf)
+        self.assertEqual(rows[0]["code"], "1")
+        self.assertEqual(rows[1]["code"], "TXT-002")
+
     def test_import_over_5000_rows_rejected(self):
         rows = [(f"OVER-{i}", f"เล่มที่ {i}") for i in range(5001)]
         resp = self._upload(_xlsx(rows))
         self.assertIn("5,000 แถว", resp.get_data(as_text=True))
+        self.assertEqual(  # the rejection must not touch the catalog
+            len(harness.query(_env.db_path,
+                              "SELECT 1 FROM books WHERE code LIKE 'OVER-%'")),
+            0)
 
     def test_413_guard_tells_user_to_split_file(self):
         original = self.app.config["MAX_CONTENT_LENGTH"]
