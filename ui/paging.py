@@ -1,17 +1,21 @@
 # ui/paging.py — pure paging math for the desktop capped-list windows.
 #
 # Kept free of tkinter so it stays trivially unit-testable (see
-# tests/test_desktop_paging.py). Sizing rationale: an idle measure on this
-# machine showed ~0.62 ms/widget to create and ~1.5 ms/widget to destroy a
-# CTk widget — a book row costs ~10 widgets. Rendering only the visible
-# page keeps a 1000-row catalog at <= ~0.4s of UI work where rendering all
-# rows froze the desktop app for many seconds and blew past Windows' GDI
-# handle quota (Tk then died with "Failed to create the embedded menu
-# window" — a Tcl_Panic, uncatchable).
+# tests/test_desktop_paging.py).
+#
+# Re-measured 2026-11-14 (this machine, Python 3.10 / Tk 8.6): a book row
+# costs ~15-35 ms to create and ~17-26 ms to destroy (rounded CTk card +
+# checkbox + labels + badge + buttons ≈ 10 widgets) — a 50-row page is
+# 2.5-3 s of solid UI work, and rendering all rows froze the app for many
+# seconds and blew past Windows' GDI handle quota (Tk then died with
+# "Failed to create the embedded menu window" — a Tcl_Panic, uncatchable).
+# Page sizes below keep one page ≈ 1 s of streamed work and a hard cap of
+# ~1000 Tk windows; RowWindow streams both phases chunk-by-chunk so no
+# single event-loop bite blocks input for long.
 
-INITIAL_ROWS = 50      # rendered as soon as the page is shown
-STEP_ROWS = 80         # appended per "show more" click
-HARD_CAP = 300         # absolute widget-count guard (~3.5k Tk windows)
+INITIAL_ROWS = 25      # rendered as soon as the page is shown
+STEP_ROWS = 25         # appended per "show more" click
+HARD_CAP = 100         # absolute widget-count guard (~1000 Tk windows)
 
 
 def visible_slice(total, limit):

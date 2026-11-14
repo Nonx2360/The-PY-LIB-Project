@@ -1,4 +1,7 @@
 # app.py - LibraryApp shell + navigation controller
+import time
+import tkinter
+
 import customtkinter as ctk
 
 import db.schema
@@ -166,12 +169,72 @@ class LibraryApp(ctk.CTk):
         self.active_key = key
 
     def _show_view(self, view_cls):
-        if self.current_view is not None:
+        old = self.current_view
+        if old is not None:
+            # Swap instantly, then tear the old tree down in small bites.
+            # Destroying a populated page was measured at ~0.9 s of solid Tk
+            # work (rows × ~10 widgets + chrome) — inline it froze the window
+            # on every navigation.
             try:
-                self.current_view.destroy()
+                old.pack_forget()          # instant visual swap
             except Exception as exc:
-                logger.warning(f"Error destroying view: {exc}")
+                logger.warning(f"Error hiding view: {exc}")
+            self._chunked_destroy(old)
         self.current_view = view_cls(self.content_frame, self)
+
+    def _chunked_destroy(self, widget):
+        """Destroy a replaced view's tree a few widgets per event-loop tick.
+
+        Only container frames are enumerated (deepest first); leaf widgets
+        and customtkinter's internal canvases die together with their
+        nearest frame — destroying a raw `!canvas` standalone leaves CTk
+        widgets redrawing into dead canvases (TclError "invalid command
+        name"). tkinter.Canvas is transparent for the walk because
+        CTkScrollableFrame hangs off its parent's canvas. Each bite is
+        time-budgeted (~40 ms) so the UI stays responsive while the old
+        page unwinds.
+        """
+        try:
+            items = []
+            stack = list(widget.winfo_children())
+            while stack:
+                w = stack.pop()
+                if isinstance(w, (ctk.CTkFrame, ctk.CTkScrollableFrame)):
+                    items.append(w)
+                    stack.extend(w.winfo_children())
+                elif isinstance(w, tkinter.Canvas):
+                    stack.extend(w.winfo_children())
+        except Exception as exc:
+            logger.warning(f"Error enumerating view for teardown: {exc}")
+            try:
+                widget.destroy()
+            except Exception:
+                pass
+            return
+
+        items.reverse()          # deepest frame first
+        state = {"i": 0, "items": items, "root": widget}
+
+        def _bite():
+            deadline = time.perf_counter() + 0.040   # ms budget per tick
+            i = state["i"]
+            items_l = state["items"]
+            while i < len(items_l) and time.perf_counter() < deadline:
+                try:
+                    items_l[i].destroy()   # children die with their frame
+                except Exception:
+                    pass
+                i += 1
+            state["i"] = i
+            if i < len(items_l):
+                self.after(15, _bite)
+            else:
+                try:
+                    state["root"].destroy()
+                except Exception:
+                    pass
+
+        self.after(15, _bite)
 
     # ================= navigation targets =================
     def show_dashboard(self):

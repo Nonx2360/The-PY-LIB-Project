@@ -37,11 +37,16 @@ class TestVisibleSlice(unittest.TestCase):
         self.assertTrue(paging.reached_cap(1100, limit))
 
     def test_exact_boundary_show_more_disappears(self):
-        # 130 rows: at limit 150 everything fits, no "show more"
-        self.assertEqual(paging.visible_slice(130, 150), (0, 130, False))
-        # 199 rows at the same limit still shows the button
-        _start, _count, more = paging.visible_slice(199, 150)
-        self.assertTrue(more)
+        # exactly HARD_CAP rows: everything fits — no button, no cap note
+        self.assertEqual(paging.visible_slice(paging.HARD_CAP, paging.HARD_CAP),
+                         (0, paging.HARD_CAP, False))
+        # rows beyond the cap: the window stays at HARD_CAP, the cap note
+        # replaces the button, and reached_cap() reports it
+        total = paging.HARD_CAP + 99
+        start, count, more = paging.visible_slice(total, paging.HARD_CAP)
+        self.assertEqual((start, count), (0, paging.HARD_CAP))
+        self.assertFalse(more)
+        self.assertTrue(paging.reached_cap(total, paging.HARD_CAP))
 
     def test_step_growth_reaches_cap_in_bounded_clicks(self):
         clicks = 0

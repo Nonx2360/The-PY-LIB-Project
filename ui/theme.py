@@ -120,23 +120,36 @@ def input_bg():
     return INPUT_LIGHT if is_light() else INPUT_DARK
 
 
+_FONT_CACHE = {}
+
+
 def font(size=13, bold=False, display=False):
     """Widget text.
     display=True  -> Prompt display face (falls back to Sarabun bold if
                      the bundled TTFs are missing).
     display=False -> Sarabun body face.
+
+    Fonts are cached per (family, size, weight): a 50-row page used to
+    create ~300 CTkFont objects per render, and every CTkFont registers
+    itself in customtkinter's global scaling/appearance registries and is
+    never released — hundreds of leaked font objects accumulated per page
+    visit. Widgets sharing one font object is the supported pattern.
     """
     if not display:
         fam = FONT_BOLD if bold else FONT
-        return ctk.CTkFont(family=fam, size=size,
-                           weight="bold" if bold else "normal")
-    if DISPLAY_OK:
+        weight = "bold" if bold else "normal"
+    elif DISPLAY_OK:
         fam = FONT_DISPLAY if bold else FONT_DISPLAY_MED
         weight = "normal"
     else:
         fam = FONT_BOLD if bold else FONT
         weight = "bold" if bold else "normal"
-    return ctk.CTkFont(family=fam, size=size, weight=weight)
+    key = (fam, size, weight)
+    cached = _FONT_CACHE.get(key)
+    if cached is None:
+        cached = ctk.CTkFont(family=fam, size=size, weight=weight)
+        _FONT_CACHE[key] = cached
+    return cached
 
 
 # ---- widget builders ----

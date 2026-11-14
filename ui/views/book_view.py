@@ -83,7 +83,7 @@ class BookView(ctk.CTkFrame):
         list_card.grid(row=0, column=1, sticky="nsew")
 
         top = ctk.CTkFrame(list_card, fg_color="transparent")
-        top.pack(fill="x", padx=18, pady=(14, 10))
+        top.grid(row=0, column=0, sticky="ew", padx=18, pady=(14, 10))
         self.count_label = ctk.CTkLabel(top, text="รายการหนังสือ", font=theme.font(17, bold=True),
                                         text_color=theme.text_color(), anchor="w")
         self.count_label.pack(side="left")
@@ -101,9 +101,18 @@ class BookView(ctk.CTkFrame):
         # "show more" button — building a row costs ~10 Tk windows, so
         # rendering all 1000+ rows at once froze the app and could exhaust
         # Windows GDI handles (Tk then panics — uncatchable).
+        #
+        # The right panel is a 3-row grid (header / bulk bar / list) so the
+        # bar can be shown+hidden with grid_remove()/grid() — it must NOT
+        # use pack(before=list_frame): RowWindow is a CTkScrollableFrame,
+        # whose real Tk window lives inside a canvas (create_window), so Tk
+        # rejects it as a pack sibling ("window ... isn't packed").
         self.list_frame = RowWindow(list_card, empty_note="ไม่พบหนังสือ")
         self.list_frame.on_status = self._update_count
-        self.list_frame.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+        list_card.grid_rowconfigure(2, weight=1)
+        list_card.grid_columnconfigure(0, weight=1)
+        self.list_frame.grid(row=2, column=0, sticky="nsew",
+                             padx=10, pady=(0, 10))
 
         self._display_books()
 
@@ -295,16 +304,17 @@ class BookView(ctk.CTkFrame):
         if n == 0:
             self._bulk_count_label = None
             if self.bulk_bar.winfo_manager():
-                self.bulk_bar.pack_forget()
+                self.bulk_bar.grid_remove()
             return
         if not self.bulk_bar.winfo_manager():
             if not self._bulk_built:
                 self._build_bulk_bar()
                 self._bulk_built = True
-            # keep the bar visually above the list even though it was
-            # created before the list frame got packed
-            self.bulk_bar.pack(fill="x", padx=10, pady=(0, 6),
-                               before=self.list_frame)
+            # row 1 of the right panel grid: between the header (row 0) and
+            # the bounded list (row 2). grid()/grid_remove() keep the slot
+            # stable across hide/show cycles.
+            self.bulk_bar.grid(row=1, column=0, sticky="ew",
+                               padx=10, pady=(0, 6))
         if self._bulk_count_label is not None:
             self._bulk_count_label.configure(text=f"เลือกไว้ {n} รายการ")
 
