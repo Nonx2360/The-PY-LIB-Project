@@ -27,7 +27,7 @@
             <nav class="member-nav" aria-label="เมนูโมดูลของสมาชิก">
                 {% set nav_ep = request.endpoint %}
                 <a href="{{ url_for('member_portal') }}" class="{% if nav_ep == 'member_portal' %}active{% endif %}"{% if nav_ep == 'member_portal' %} aria-current="page"{% endif %}>
-                    <svg width="16" height="16" aria-hidden="true"><use href="#icon-square"/></svg> QR ประจำตัว
+                    <img src="{{ url_for('static', filename='img/svg/QRcode-svg.svg') }}" width="16" height="16" alt="" aria-hidden="true"> QR ประจำตัว
                 </a>
                 <a href="{{ url_for('member_loans') }}" class="{% if nav_ep == 'member_loans' %}active{% endif %}"{% if nav_ep == 'member_loans' %} aria-current="page"{% endif %}>
                     <svg width="16" height="16" aria-hidden="true"><use href="#icon-book"/></svg> หนังสือที่กำลังยืม
