@@ -41,5 +41,22 @@
         <div class="slip-meta"><span class="date-stamp">{{ stamp_date }}</span></div>
         <p class="login-school">{{ settings.school_name if settings else 'DSNPRU' }}</p>
     </main>
+    <script>
+    (function () {
+        var DAYS = ["อาทิตย์", "จันทร์", "อังคาร", "พุธ", "พฤหัสบดี", "ศุกร์", "เสาร์"];
+        var MONTHS = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+                      "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+        function pad(n) { return (n < 10 ? "0" : "") + n; }
+        function tick() {
+            var d = new Date();
+            var text = DAYS[d.getDay()] + " " + d.getDate() + " " + MONTHS[d.getMonth()] + " " +
+                       (d.getFullYear() + 543) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+            var els = document.querySelectorAll(".date-stamp");
+            for (var i = 0; i < els.length; i++) els[i].textContent = text;
+        }
+        tick();
+        setInterval(tick, 1000);
+    })();
+    </script>
 </body>
 </html>
