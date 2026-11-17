@@ -75,7 +75,11 @@ class LibraryApp(ctk.CTk):
     def _on_login_success(self):
         logger.info("Login successful, building main UI")
         if self.content_frame is not None:
-            self.content_frame.destroy()
+            self.content_frame.destroy()   # the login view dies with it
+        # current_view points at the destroyed LoginView — clear it so the
+        # first _show_view() doesn't try to tear down a dead window path
+        # (TclError "bad window path name .!ctkframe.!loginview").
+        self.current_view = None
         self._build_main_ui()
 
     def _logout(self):
@@ -170,7 +174,7 @@ class LibraryApp(ctk.CTk):
 
     def _show_view(self, view_cls):
         old = self.current_view
-        if old is not None:
+        if old is not None and old.winfo_exists():
             # Swap instantly, then tear the old tree down in small bites.
             # Destroying a populated page was measured at ~0.9 s of solid Tk
             # work (rows × ~10 widgets + chrome) — inline it froze the window

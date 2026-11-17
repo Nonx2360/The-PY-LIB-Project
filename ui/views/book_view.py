@@ -413,7 +413,7 @@ class BookView(ctk.CTkFrame):
             return
         # Mirror the web's 8 MB upload cap: refuse a huge file BEFORE parsing
         # it, with the same "split the file" guidance the web 413 handler uses.
-        if os.path.getsize(filename) > ExcelService.MAX_FILE_BYTES:
+        if ExcelService.file_exceeds_cap(filename):
             show_toast(self, "ไฟล์ใหญ่เกิน 8 MB — กรุณาแบ่งการนำเข้าเป็นหลายไฟล์",
                        "red")
             return
